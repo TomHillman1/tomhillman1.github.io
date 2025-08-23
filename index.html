@@ -58,7 +58,7 @@
     // Fetch all records (adjust columns to match your schema)
     const { data: records, error } = await supabase
       .from("records")
-      .select("id, artist, title, year, cover_path")
+      .select("id, artist, title, year, cover_url")
       .order("artist", { ascending: true })
       .order("year", { ascending: true });
 
@@ -77,7 +77,7 @@
     // Generate rows
     const rows = await Promise.all(
       (records ?? []).map(async (r) => {
-        const coverUrl = await signedCover(r.cover_path);
+        const coverUrl = await signedCover(r.cover_url);
         const img = coverUrl
           ? `<img class="thumb" src="${coverUrl}" alt="Cover of ${r.title}">`
           : `<div style="width:64px;height:64px;border-radius:6px;background:#eee;"></div>`;
