@@ -21,16 +21,19 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: my-vinyl/package-lock.json
       - run: npm ci
+        working-directory: my-vinyl
       - name: Build
         run: npm run build
+        working-directory: my-vinyl
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_SUPABASE_BUCKET: ${{ secrets.VITE_SUPABASE_BUCKET || 'media' }}
+          VITE_SUPABASE_BUCKET: ${{ secrets.VITE_SUPABASE_BUCKET }}
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: my-vinyl/dist
   deploy:
     needs: build
     runs-on: ubuntu-latest
