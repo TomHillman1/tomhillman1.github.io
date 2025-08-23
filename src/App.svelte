@@ -4,7 +4,7 @@
 
   const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
   const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  const BUCKET = import.meta.env.VITE_SUPABASE_BUCKET || 'medsia';
+  const BUCKET = import.meta.env.VITE_SUPABASE_BUCKET || 'media';
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -77,7 +77,7 @@
 </style>
 
 <div class="wrap">
-  <h1>My Vinyl</h1>
+  <h1>My Vinyl Collection</h1>
   <div class="hint">Barebones list pulled from Supabase (records + signed cover images).</div>
 
   <div class="grid">
