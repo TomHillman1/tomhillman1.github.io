@@ -75,11 +75,11 @@
   }
 </style>
 <section>
-<div class="wrap">
+
   <h1>My Vinyl Collection</h1>
   <div class="hint">A Digitised collection of all of my amazing vinyl.</div>
   
-  <div class="grid">
+  <div class="grid max-w-6xl mx-auto px-4">
     <table>
       <thead>
         <tr>
@@ -115,5 +115,4 @@
       </tbody>
     </table>
   </div>
-</div>
 </section>
