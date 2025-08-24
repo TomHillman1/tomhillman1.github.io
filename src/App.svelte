@@ -3,7 +3,7 @@
   import { view, type View } from './lib/view';
   import Professional from './components/Professional.svelte';
   import Contact from './components/Contact.svelte';
-  import Vinyl from './components/Vinyl.svelte';
+  import Vinyl from './components/VinylTable.svelte';
   import { onMount } from 'svelte';
 
   const valid = new Set<View>(['vinyl', 'pro', 'contact']);

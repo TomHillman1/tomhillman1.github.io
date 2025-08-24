@@ -1,9 +1,9 @@
 <script lang="ts">
   import { view, type View } from '../lib/view';
   const items: { id: View; label: string }[] = [
-    { id: 'vinyl', label: 'Vinyl' },
     { id: 'pro', label: 'Professional' },
-    { id: 'contact', label: 'Contact' }
+    { id: 'contact', label: 'Contact' },
+    { id: 'vinyl', label: 'Vinyl' }
   ];
   let open = false;
   const go = (id: View) => { view.set(id); open = false; };
