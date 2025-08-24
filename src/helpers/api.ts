@@ -19,7 +19,32 @@ export const getRecords = async () => {
     return data;
 };
 
-export const getSignedCover = async(path?: string | null) => {
+export const getRecord = async (id: string) => {
+    const { data, error } = await supabase
+        .from('records')
+        .select('*')
+        .eq('id', id)
+        .single();
+    if (error) {
+        console.error('Error fetching record:', error);
+        return [];
+    }
+    return data;
+};
+
+export const getTracks = async (id: string) => {
+    const { data, error } = await supabase
+        .from('tracks')
+        .select('*')
+        .eq('record_id', id);
+    if (error) {
+        console.error('Error fetching tracks:', error);
+        return [];
+    }
+    return data;
+};
+
+export const getSignedURL = async(path?: string | null) => {
     if (!path) return null;
     const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 3600);
     return error ? null : data.signedUrl;

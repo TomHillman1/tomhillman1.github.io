@@ -1,30 +1,29 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import type { Vinyl } from '../helpers/models';
-  import { getRecords, getSignedCover } from '../helpers/api';
+  import { getRecords, getSignedURL } from '../helpers/api';
+  import { goto } from '../helpers/router';
 
-  let loading = true;
-  let errorMsg = '';
   type VinylRow = Vinyl & { coverSignedUrl?: string | null };
-  let records: VinylRow[] = [];
-
+  let loading = true, errorMsg = '', records: VinylRow[] = [];
 
   onMount(async () => {
     const data = await getRecords();
-    const rows = await Promise.all(
-      (data ?? []).map(async r => ({ ...r, coverSignedUrl: await getSignedCover(r.cover_url) }))
+    records = await Promise.all(
+      (data ?? []).map(async r => ({ ...r, coverSignedUrl: await getSignedURL(r.cover_url) }))
     );
-
-    records = rows;
     loading = false;
   });
 
+  function openRecord(id: string) {
+    goto({ page: 'record', params: { id } }); // -> #/record/<id>
+  }
 </script>
 
 <section>
   <h1>My Vinyl Collection</h1>
   <div class="hint">A Digitised collection of all of my amazing vinyl.</div>
-  
+
   <div class="grid max-w-6xl mx-auto px-4">
     <table>
       <thead>
@@ -44,7 +43,8 @@
           <tr><td colspan="4">No records yet.</td></tr>
         {:else}
           {#each records as r}
-            <tr>
+            <tr class="cursor-pointer hover:bg-surface-100"
+                on:click={() => openRecord(r.id)}>
               <td>
                 {#if r.coverSignedUrl}
                   <img class="thumb" src={r.coverSignedUrl} alt={`Cover of ${r.title}`} />
@@ -53,7 +53,13 @@
                 {/if}
               </td>
               <td>{r.artist}</td>
-              <td>{r.title}</td>
+              <td>
+                <a href={`#/record/${encodeURIComponent(r.id)}`}
+                   on:click|preventDefault={() => openRecord(r.id)}
+                   class="text-primary-600 hover:underline">
+                  {r.title}
+                </a>
+              </td>
               <td>{r.year ?? ''}</td>
             </tr>
           {/each}
@@ -62,6 +68,7 @@
     </table>
   </div>
 </section>
+
 
 <style>
   :root { --pad: 12px; }
@@ -82,4 +89,4 @@
   @media (max-width: 640px) {
     th:nth-child(4), td:nth-child(4) { display:none; }
   }
-</style>
+</style>  
