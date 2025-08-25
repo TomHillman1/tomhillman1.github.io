@@ -54,8 +54,8 @@
         {/if}
         <div>
             <h1 class="text-3xl font-semibold">{record.title}</h1>
-            <p class="text-surface-200">{record.artist} • {record.year} • {record.genre}</p>
-            <p class="mt-2 text-surface-200">{record.description}</p>
+            <p class="dark:text-surface-200">{record.artist} • {record.year} • {record.genre}</p>
+            <p class="mt-2 dark:text-surface-200">{record.description}</p>
         </div>
     </div>
     <div class="tabler-wrap max-w-6xl">
@@ -86,7 +86,7 @@
           {/each}
         </tbody>
       </table>
-      <p class="pl-2 text-left text-surface-200">{"Record ID : " + record.id +", Speed : " + record.speed + "RPM"}</p>
+      <p class="pl-2 text-left dark:text-surface-200">{"Record ID : " + record.id +", Speed : " + record.speed + "RPM"}</p>
     </div>
     
   {/if}

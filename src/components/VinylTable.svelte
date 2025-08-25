@@ -71,12 +71,6 @@
 
 
 <style>
-  :root { --pad: 12px; }
-  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; }
-
-  .wrap { padding: 2rem; }
-
-  /* NEW: make text inside the white card dark so it shows up */
   .grid { overflow-x: auto; background: white; border: 1px solid #eee; border-radius: 10px; color: #111; }
   table { width: 100%; border-collapse: collapse; }
   th, td { border-bottom: 1px solid #eee; padding: var(--pad); text-align: left; vertical-align: middle; }
