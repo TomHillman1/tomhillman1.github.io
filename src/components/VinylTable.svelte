@@ -32,6 +32,7 @@
           <th>Artist</th>
           <th>Title</th>
           <th>Year</th>
+          <th>Genre</th>
         </tr>
       </thead>
       <tbody>
@@ -61,6 +62,7 @@
                 </a>
               </td>
               <td>{r.year ?? ''}</td>
+              <td>{r.genre ?? ''}</td>
             </tr>
           {/each}
         {/if}
