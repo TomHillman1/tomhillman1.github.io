@@ -61,9 +61,11 @@
   {:else if record}
     <div class="mt-4 flex items-start gap-6 pb-6">
         {#if coverSignedUrl}
-            <Lightbox showCloseButton={false}>
-              <img src={coverSignedUrl} alt={`Cover of ${record.title}`} class="w-80 h-80 object-cover rounded-lg" />
-            </Lightbox>
+        <div class="flex-grow-0 flex-shrink-0 w-48">
+          <Lightbox showCloseButton={false}>
+            <img src={coverSignedUrl} alt={`Cover of ${record.title}`} class="object-cover rounded-lg" />
+          </Lightbox>  
+        </div>
         {/if}
         <div>
             <h1 class="text-3xl font-semibold">{record.title}</h1>
