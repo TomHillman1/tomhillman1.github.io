@@ -3,9 +3,12 @@
   import type { Vinyl } from '../helpers/models';
   import { getRecords, getSignedURL } from '../helpers/api';
   import { goto } from '../helpers/router';
+    import { Search } from '@lucide/svelte';
 
   type VinylRow = Vinyl & { coverSignedUrl?: string | null };
   let loading = true, errorMsg = '', records: VinylRow[] = [];
+  let filteredRecords: VinylRow[] = [];
+  $: filteredRecords = records;
 
   onMount(async () => {
     const data = await getRecords();
@@ -18,12 +21,23 @@
   function openRecord(id: string) {
     goto({ page: 'record', params: { id } }); // -> #/record/<id>
   }
+
+  const onSearch = (e: Event) => {
+    const q = (e.target as HTMLInputElement).value.toLowerCase();
+    filteredRecords = records.filter(t => t.title.toLowerCase().includes(q) || t.artist.toLowerCase().includes(q) || (t.year?.toString().includes(q) ?? false));
+  };
+
 </script>
 
 <section>
   <h1 class = "mb-[1rem]">My Vinyl Collection</h1>
   <div class="hint">A Digitised collection of all of my amazing vinyl.</div>
-
+  <div class="input-group grid-cols-[auto_1fr_auto] mt-1 mb-1 w-sm">
+    <div class="ig-cell preset-tonal">
+      <Search size={16} />
+    </div>
+    <input on:input={onSearch} class="ig-input" type="search" placeholder="Search..." />
+  </div>
   <div class="tabler-wrap max-w-6xl">
     <div class="max-h-[60rem] overflow-y-auto overflow-x-auto rounded-lg shadow-sm pb-2">
       <table class="table caption-bottom min-w-full">
@@ -47,7 +61,7 @@
           {:else if !records.length}
             <tr><td colspan="4">No records yet.</td></tr>
           {:else}
-            {#each records as r}
+            {#each filteredRecords as r}
               <tr class="cursor-pointer hover:bg-surface-100/80 hover:dark:bg-surface-800/80"
                   on:click={() => openRecord(r.id)}>
                 <td>

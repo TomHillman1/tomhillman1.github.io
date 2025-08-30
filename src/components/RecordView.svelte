@@ -4,6 +4,9 @@
   import { getRecord, getTracks, getSignedURL } from '../helpers/api';
   import { mapNumbertoChar } from '../helpers/mappers';
   import { Lightbox } from 'svelte-lightbox';
+  import { Search } from '@lucide/svelte';
+
+
   export let id: string | undefined;
 
   let record: Vinyl | null = null;
@@ -11,7 +14,9 @@
   let tracks: TrackRow[] = [];
   let coverSignedUrl: string | null = null;
   let loading = true, errorMsg = '';
-
+  let filteredTracks: TrackRow[] = [];
+  $: filteredTracks = tracks;
+  
   async function load() {
     if (!id) { errorMsg = 'No record id in URL.'; loading = false; return; }
     loading = true; errorMsg = '';
@@ -35,7 +40,13 @@
   }
 
   onMount(load);
-  // reload when the id prop changes (e.g., navigating between records without leaving the page)
+
+  const onSearch = (e: Event) => {
+    const q = (e.target as HTMLInputElement).value.toLowerCase();
+    filteredTracks = tracks.filter(t => t.title.toLowerCase().includes(q));
+  };
+
+  // reload when the "id" property changes (i.e. navigating between records without leaving the page)
   $: id, id && load();
 
 </script>
@@ -60,6 +71,12 @@
             <p class="mt-2 dark:text-surface-200">{record.description}</p>
         </div>
     </div>
+    <div class="input-group grid-cols-[auto_1fr_auto] mt-1 mb-1 w-sm">
+      <div class="ig-cell preset-tonal">
+        <Search size={16} />
+      </div>
+      <input on:input={onSearch} class="ig-input" type="search" placeholder="Search..." />
+    </div>
     <div class="tabler-wrap max-w-6xl">
       <div class="max-h-[60rem] overflow-y-auto overflow-x-auto rounded-lg shadow-sm pb-2">
         <table class="table caption-bottom min-w-full">
@@ -76,7 +93,7 @@
             </tr>
           </thead>
           <tbody>
-            {#each tracks as t}
+            {#each filteredTracks as t}
               <tr>
                 <td class="text-left whitespace-nowrap min-w-max pr-4">{t.title}</td>
                 <td class="text-left align-top">{t.description}</td>
