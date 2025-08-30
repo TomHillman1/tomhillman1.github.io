@@ -33,8 +33,8 @@
                   backdrop-blur supports-[backdrop-filter]:bg-surface-100/60 dark:supports-[backdrop-filter]:bg-surface-800/60">
           <tr>
             <th>Cover</th>
-            <th>Artist</th>
             <th>Title</th>
+            <th>Artist</th>
             <th>Year</th>
             <th>Genre</th>
           </tr>
@@ -54,19 +54,13 @@
                   {#if r.coverSignedUrl}
                     <img class="thumb" src={r.coverSignedUrl} alt={`Cover of ${r.title}`} />
                   {:else}
-                    <div style="width:64px;height:64px;border-radius:6px;background:#eee;"></div>
+                    <div style="width:80px;height:80px;border-radius:6px;background:#eee;"></div>
                   {/if}
                 </td>
-                <td>{r.artist}</td>
-                <td>
-                  <a href={`#/record/${encodeURIComponent(r.id)}`}
-                    on:click|preventDefault={() => openRecord(r.id)}
-                    class="text-primary-600">
-                    {r.title}
-                  </a>
-                </td>
-                <td>{r.year ?? ''}</td>
-                <td>{r.genre ?? ''}</td>
+                <td class="text-left font-bold">{r.title}</td>
+                <td class="text-left">{r.artist}</td>
+                <td class="text-left">{r.year ?? ''}</td>
+                <td class="text-left">{r.genre ?? ''}</td>
               </tr>
             {/each}
           {/if}
@@ -88,9 +82,10 @@
 
 <style>
   .hint { color:#666; margin: .25rem 0 1rem; font-size: .95rem; }
-  img.thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; background:#f3f3f3; display:block; }
+  img.thumb { width: 80x; height: 80px; object-fit: cover; border-radius: 6px; background:#f3f3f3; display:block; }
 
   @media (max-width: 640px) {
     th:nth-child(4), td:nth-child(4) { display:none; }
+    th:nth-child(5), td:nth-child(5) { display:none; }
   }
 </style>  
