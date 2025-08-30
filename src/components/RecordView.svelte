@@ -94,16 +94,13 @@
       <p class="pl-2 text-left dark:text-surface-200">
         {"Record ID : " + record.id +", Speed : " + record.speed + "RPM"}
       </p>
-      <div class="h-8"> </div>
+      <div class="h-8"></div>
     </div>
   {/if}
 </section>
 
 
 <style>
-  :root { --pad: 12px; }
-
-  .grid { overflow-x: auto; background: white; border: 1px solid #eee; border-radius: 10px; color: #111; }
 
   h1 { margin: 0 0 1rem; }
   @media (max-width: 640px) {

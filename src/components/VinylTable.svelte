@@ -21,64 +21,72 @@
 </script>
 
 <section>
-  <h1>My Vinyl Collection</h1>
+  <h1 class = "mb-[1rem]">My Vinyl Collection</h1>
   <div class="hint">A Digitised collection of all of my amazing vinyl.</div>
 
-  <div class="grid max-w-6xl mx-auto px-4">
-    <table>
-      <thead>
-        <tr>
-          <th>Cover</th>
-          <th>Artist</th>
-          <th>Title</th>
-          <th>Year</th>
-          <th>Genre</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#if loading}
-          <tr><td colspan="4">Loading…</td></tr>
-        {:else if errorMsg}
-          <tr><td colspan="4">{errorMsg}</td></tr>
-        {:else if !records.length}
-          <tr><td colspan="4">No records yet.</td></tr>
-        {:else}
-          {#each records as r}
-            <tr class="cursor-pointer hover:bg-surface-100"
-                on:click={() => openRecord(r.id)}>
-              <td>
-                {#if r.coverSignedUrl}
-                  <img class="thumb" src={r.coverSignedUrl} alt={`Cover of ${r.title}`} />
-                {:else}
-                  <div style="width:64px;height:64px;border-radius:6px;background:#eee;"></div>
-                {/if}
-              </td>
-              <td>{r.artist}</td>
-              <td>
-                <a href={`#/record/${encodeURIComponent(r.id)}`}
-                   on:click|preventDefault={() => openRecord(r.id)}
-                   class="text-primary-600 hover:underline">
-                  {r.title}
-                </a>
-              </td>
-              <td>{r.year ?? ''}</td>
-              <td>{r.genre ?? ''}</td>
-            </tr>
-          {/each}
-        {/if}
-      </tbody>
-    </table>
+  <div class="tabler-wrap max-w-6xl">
+    <div class="max-h-[60rem] overflow-y-auto overflow-x-auto rounded-lg shadow-sm pb-2">
+      <table class="table caption-bottom min-w-full">
+          <thead
+            class="sticky top-0 z-10
+                  bg-surface-100/80 dark:bg-surface-800/80
+                  backdrop-blur supports-[backdrop-filter]:bg-surface-100/60 dark:supports-[backdrop-filter]:bg-surface-800/60">
+          <tr>
+            <th>Cover</th>
+            <th>Artist</th>
+            <th>Title</th>
+            <th>Year</th>
+            <th>Genre</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#if loading}
+            <tr><td colspan="4">Loading…</td></tr>
+          {:else if errorMsg}
+            <tr><td colspan="4">{errorMsg}</td></tr>
+          {:else if !records.length}
+            <tr><td colspan="4">No records yet.</td></tr>
+          {:else}
+            {#each records as r}
+              <tr class="cursor-pointer hover:bg-surface-100/80 hover:dark:bg-surface-800/80"
+                  on:click={() => openRecord(r.id)}>
+                <td>
+                  {#if r.coverSignedUrl}
+                    <img class="thumb" src={r.coverSignedUrl} alt={`Cover of ${r.title}`} />
+                  {:else}
+                    <div style="width:64px;height:64px;border-radius:6px;background:#eee;"></div>
+                  {/if}
+                </td>
+                <td>{r.artist}</td>
+                <td>
+                  <a href={`#/record/${encodeURIComponent(r.id)}`}
+                    on:click|preventDefault={() => openRecord(r.id)}
+                    class="text-primary-600">
+                    {r.title}
+                  </a>
+                </td>
+                <td>{r.year ?? ''}</td>
+                <td>{r.genre ?? ''}</td>
+              </tr>
+            {/each}
+          {/if}
+        </tbody>
+      </table>
+    </div>
+    {#if loading}
+      <tr><td colspan="4">Loading…</td></tr>
+    {:else}
+    <p class="pl-2 text-left dark:text-surface-200">
+        {records.length + " records found"}
+    </p>
+    <div class="h-8"></div>
+    {/if}
+    
   </div>
 </section>
 
 
 <style>
-  .grid { overflow-x: auto; background: white; border: 1px solid #eee; border-radius: 10px; color: #111; }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { border-bottom: 1px solid #eee; padding: var(--pad); text-align: left; vertical-align: middle; }
-  th { background: #fafafa; position: sticky; top: 0; color: #333; } /* NEW */
-
-  h1 { margin: 0 0 1rem; }
   .hint { color:#666; margin: .25rem 0 1rem; font-size: .95rem; }
   img.thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; background:#f3f3f3; display:block; }
 
