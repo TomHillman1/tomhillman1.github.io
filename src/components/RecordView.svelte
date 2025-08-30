@@ -3,7 +3,7 @@
   import type { Track, Vinyl } from '../helpers/models';
   import { getRecord, getTracks, getSignedURL } from '../helpers/api';
   import { mapNumbertoChar } from '../helpers/mappers';
-
+  import { Lightbox } from 'svelte-lightbox';
   export let id: string | undefined;
 
   let record: Vinyl | null = null;
@@ -50,7 +50,9 @@
   {:else if record}
     <div class="mt-4 flex items-start gap-6 pb-6">
         {#if coverSignedUrl}
-            <img src={coverSignedUrl} alt={`Cover of ${record.title}`} class="w-40 h-40 object-cover rounded-lg" />
+            <Lightbox showCloseButton={false}>
+              <img src={coverSignedUrl} alt={`Cover of ${record.title}`} class="w-80 h-80 object-cover rounded-lg" />
+            </Lightbox>
         {/if}
         <div>
             <h1 class="text-3xl font-semibold">{record.title}</h1>
