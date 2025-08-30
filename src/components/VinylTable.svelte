@@ -68,7 +68,7 @@
       </table>
     </div>
     {#if loading}
-      <tr><td colspan="4">Loading…</td></tr>
+      <p class="pl-2 text-left dark:text-surface-200">Loading…</p>
     {:else}
     <p class="pl-2 text-left dark:text-surface-200">
         {records.length + " records found"}
