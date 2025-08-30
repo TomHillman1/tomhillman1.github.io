@@ -48,7 +48,7 @@
   {:else if errorMsg}
     <p class="mt-4 text-red-600">{errorMsg}</p>
   {:else if record}
-    <div class="mt-4 flex items-start gap-6">
+    <div class="mt-4 flex items-start gap-6 pb-6">
         {#if coverSignedUrl}
             <img src={coverSignedUrl} alt={`Cover of ${record.title}`} class="w-40 h-40 object-cover rounded-lg" />
         {/if}
@@ -59,36 +59,43 @@
         </div>
     </div>
     <div class="tabler-wrap max-w-6xl">
-      <table class="table caption-bottom">
-        <thead>
-          <tr>
-            <th>Track</th>
-            <th>Description</th>
-            <th>Side</th>
-            <th>#</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each tracks as t}
+      <div class="max-h-[60rem] overflow-y-auto overflow-x-auto rounded-lg shadow-sm pb-2">
+        <table class="table caption-bottom min-w-full">
+          <thead
+            class="sticky top-0 z-10
+                  bg-surface-100/80 dark:bg-surface-800/80
+                  backdrop-blur supports-[backdrop-filter]:bg-surface-100/60 dark:supports-[backdrop-filter]:bg-surface-800/60">
             <tr>
-              <td class="text-left whitespace-nowrap min-w-max pr-4">{t.title}</td>
-              <td class="text-left align-top">{t.description}</td>
-              <td>{mapNumbertoChar(t.side_no)}</td>
-              <td>{t.track_no}</td>
-              <td class="text-right">
-                <audio controls>
-                    <source src={t.audioSignedUrl} type="audio/mp4">
-                    Your browser does not support the audio element.
-                </audio>
-              </td>
+              <th>Track</th>
+              <th>Description</th>
+              <th>Side</th>
+              <th>#</th>
+              <th></th>
             </tr>
-          {/each}
-        </tbody>
-      </table>
-      <p class="pl-2 text-left dark:text-surface-200">{"Record ID : " + record.id +", Speed : " + record.speed + "RPM"}</p>
+          </thead>
+          <tbody>
+            {#each tracks as t}
+              <tr>
+                <td class="text-left whitespace-nowrap min-w-max pr-4">{t.title}</td>
+                <td class="text-left align-top">{t.description}</td>
+                <td>{mapNumbertoChar(t.side_no)}</td>
+                <td>{t.track_no}</td>
+                <td class="text-right">
+                  <audio controls>
+                    <source src={t.audioSignedUrl} type="audio/mp4" />
+                    Your browser does not support the audio element.
+                  </audio>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+      <p class="pl-2 text-left dark:text-surface-200">
+        {"Record ID : " + record.id +", Speed : " + record.speed + "RPM"}
+      </p>
+      <div class="h-8"> </div>
     </div>
-    
   {/if}
 </section>
 
