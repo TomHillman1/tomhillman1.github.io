@@ -9,6 +9,7 @@ export type Vinyl =
     record_type: string,       // LP, EP, Single etc
     genre: string,             // genre
     speed: string              // 33, 45, 78 etc
+    artist_id: string              // 33, 45, 78 etc
 }
 
 export type Track =
@@ -26,7 +27,7 @@ export type Artist =
 {
     id: string,                // uuid
     name: string,              // artist name
-    dob: Date,                 // date of birth
+    dob: string,                 // date of birth
     origin_place: string,      // city or town
     origin_country: string,    // ISO-3166 alpha-2 country code (e.g. "GB")
     origin_lat: number,        // latitude (float)

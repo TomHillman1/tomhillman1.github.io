@@ -73,3 +73,16 @@ export const getArtists = async () => {
     }
     return data;
 };
+
+export const getArtist = async (id: string) => {
+    const { data, error } = await supabase
+        .from('artists')
+        .select('*')
+        .eq('id', id)
+        .single();
+    if (error) {
+        console.error('Error fetching artist:', error);
+        return [];
+    }
+    return data;
+};

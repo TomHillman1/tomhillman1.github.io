@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import type { Track, Vinyl } from '../helpers/models';
-  import { getRecord, getTracks, getSignedURL } from '../helpers/api';
+  import { getRecord, getTracks, getSignedURL, getArtist } from '../helpers/api';
   import { mapNumbertoChar } from '../helpers/mappers';
   import { Lightbox } from 'svelte-lightbox';
   import { Search } from '@lucide/svelte';
+    import ArtistModal from './ArtistModal.svelte';
 
 
   export let id: string | undefined;
@@ -15,6 +16,8 @@
   let coverSignedUrl: string | null = null;
   let loading = true, errorMsg = '';
   let filteredTracks: TrackRow[] = [];
+  let artistModalOpen = false;
+
   $: filteredTracks = tracks;
   
   async function load() {
@@ -46,6 +49,11 @@
     filteredTracks = tracks.filter(t => t.title.toLowerCase().includes(q));
   };
 
+  const openArtistModal = (e: Event) => {
+    artistModalOpen = true;
+  };
+
+
   // reload when the "id" property changes (i.e. navigating between records without leaving the page)
   $: id, id && load();
 
@@ -53,7 +61,9 @@
 
 <section>
   <a class="text-sm text-primary-600 hover:underline" href="#/vinyl">← All records</a>
-
+  {#if artistModalOpen && record}
+    <ArtistModal bind:openState={artistModalOpen} artist_id={record.artist_id} />
+  {/if}
   {#if loading}
     <p class="mt-4">Loading…</p>
   {:else if errorMsg}
@@ -69,7 +79,7 @@
         {/if}
         <div>
             <h1 class="text-3xl font-semibold">{record.title}</h1>
-            <p class="dark:text-surface-200">{record.artist} • {record.year} • {record.genre}</p>
+            <a on:click={openArtistModal} class="cursor-pointer"><p class="dark:text-surface-200">{record.artist} • {record.year} • {record.genre}</p></a>
             <p class="mt-2 dark:text-surface-200">{record.description}</p>
         </div>
     </div>
