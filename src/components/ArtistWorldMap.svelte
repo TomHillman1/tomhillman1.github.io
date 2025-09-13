@@ -123,6 +123,7 @@
     root
       .append('path')
       .attr('d', path({ type: 'Sphere' })!)
+      .attr('class', 'ocean')
       .attr('fill', '#0077be')
       .attr('stroke', '#0077be');
 
@@ -133,6 +134,7 @@
       .data(countries)
       .join('path')
       .attr('d', (d: any) => path(d)!)
+      .attr('class', 'country')
       .attr('fill', (d: any) => color(countryArtistMap.get(d.id)?.length || 0))
       .attr('stroke', '#fff')
       .attr('stroke-width', 0.5)
@@ -285,10 +287,10 @@
   :global(svg path) {
     transition: fill 120ms ease-in-out;
   }
-  :global(svg path:hover) {
+  :global(svg path.country:hover) {
     filter: brightness(0.9);
   }
-  :global(svg path:active) {
+  :global(svg path.country:active) {
     filter: brightness(0.8);
   }
   :global(svg) {
