@@ -23,6 +23,19 @@
   // Map of country feature id -> artists in that country
   const countryArtistMap = new Map<any, Artist[]>();
 
+  // Some territories (e.g., Isle of Man) are not represented as
+  // separate polygons in the 110m world-atlas dataset, so a strict
+  // point-in-polygon lookup can fail. Provide a minimal mapping of
+  // such ISO-3166 alpha-2 territory codes to their parent country
+  // name as used by the dataset so we can bucket artists correctly.
+  const territoryToParentCountryName: Record<string, string> = {
+    // UK territories / crown dependencies commonly encountered
+    IM: 'United Kingdom', // Isle of Man
+    GG: 'United Kingdom', // Guernsey
+    JE: 'United Kingdom', // Jersey
+    GI: 'United Kingdom', // Gibraltar
+  };
+
   const regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
 
   onMount(async () => {
@@ -65,10 +78,19 @@
       ) {
         const pt: [number, number] = [a.origin_lng, a.origin_lat];
         // Find the country that contains this point
-        const match = countries.find((c) => d3.geoContains(c as any, pt));
-        if (match) {
-          countryArtistMap.get(match.id)!.push(a);
+        let match = countries.find((c) => d3.geoContains(c as any, pt));
+
+        // Fallback: if no polygon contains the point (e.g., simplified
+        // datasets dropping small islands), try mapping the artist's
+        // origin_country via our territory->parent-country lookup.
+        if (!match && a.origin_country) {
+          const parent = territoryToParentCountryName[a.origin_country.toUpperCase?.() || ''];
+          if (parent) {
+            match = countries.find((c: any) => (c?.properties?.name || '').toLowerCase() === parent.toLowerCase());
+          }
         }
+
+        if (match) countryArtistMap.get(match.id)!.push(a);
       }
     }
   }
