@@ -22,6 +22,10 @@
     goto({ page: 'record', params: { id } }); // -> #/record/<id>
   }
 
+  function openArtists() {
+    goto({ page: 'artists'}); 
+  }
+
   const onSearch = (e: Event) => {
     const q = (e.target as HTMLInputElement).value.toLowerCase();
     filteredRecords = records.filter(t => t.title.toLowerCase().includes(q) || t.artist.toLowerCase().includes(q) || (t.year?.toString().includes(q) ?? false));
@@ -32,11 +36,14 @@
 <section>
   <h1 class = "mb-[1rem]">My Vinyl Collection</h1>
   <div class="hint">A Digitised collection of all of my amazing vinyl.</div>
-  <div class="input-group grid-cols-[auto_1fr_auto] mt-1 mb-1 w-sm">
-    <div class="ig-cell preset-tonal">
-      <Search size={16} />
+  <div class="flex-row gap-2 mb-2 flex flex-wrap">
+    <div class="input-group grid-cols-[auto_1fr_auto] mt-1 mb-1 w-sm">
+      <div class="ig-cell preset-tonal">
+        <Search size={16} />
+      </div>
+      <input on:input={onSearch} class="ig-input" type="search" placeholder="Search..." />
     </div>
-    <input on:input={onSearch} class="ig-input" type="search" placeholder="Search..." />
+    <button class="ig-cell preset-tonal ml-auto" on:click={openArtists} title="View Artists">Artists</button>
   </div>
   <div class="tabler-wrap max-w-6xl">
     <div class="max-h-[60rem] overflow-y-auto overflow-x-auto rounded-lg shadow-sm pb-2">
@@ -89,7 +96,6 @@
     </p>
     <div class="h-8"></div>
     {/if}
-    
   </div>
 </section>
 

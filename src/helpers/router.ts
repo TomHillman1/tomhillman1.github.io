@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store';
 
-export type Page = 'vinyl' | 'pro' | 'contact' | 'record';
+export type Page = 'vinyl' | 'pro' | 'contact' | 'record' | 'artists';
 export type Route = { page: Page; params?: Record<string, string> };
 
 function parseHash(): Route {
@@ -9,6 +9,7 @@ function parseHash(): Route {
   if (page === 'record' && rest[0]) return { page: 'record', params: { id: decodeURIComponent(rest[0]) } };
   if (page === 'pro') return { page: 'pro' };
   if (page === 'contact') return { page: 'contact' };
+  if (page === 'artists') return { page: 'artists' };
   return { page: 'vinyl' }; // default
 }
 
@@ -17,7 +18,7 @@ export const route = writable<Route>(parseHash());
 export function goto(r: Route) {
   const hash = r.page === 'record'
     ? `#/record/${encodeURIComponent(r.params!.id)}`
-    : `#/${r.page}`;
+    : `${r.page}`;
   if (location.hash !== hash) location.hash = hash;
   route.set(r);
 }
