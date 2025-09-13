@@ -11,6 +11,17 @@
 
   let container: HTMLDivElement;
   let svg: SVGSVGElement;
+  let mapG: SVGGElement | null = null;
+
+  // Track zoom/pan state across redraws
+  let currentTransform = d3.zoomIdentity as d3.ZoomTransform;
+  const zoom = d3
+    .zoom<SVGSVGElement, unknown>()
+    .scaleExtent([1, 8])
+    .on('zoom', (event) => {
+      currentTransform = event.transform;
+      if (mapG) d3.select(mapG).attr('transform', currentTransform.toString());
+    });
 
   let loading = true;
   let error: string | null = null;
@@ -119,8 +130,18 @@
 
     root.selectAll('*').remove();
 
+    // Constrain zoom/pan to viewport and attach behavior (idempotent)
+    (zoom as any)
+      .extent([[0, 0], [W, H]])
+      .translateExtent([[0, 0], [W, H]]);
+    root.call(zoom as any);
+
+    // Map group that will be zoomed/panned
+    const g = root.append('g').attr('class', 'map');
+    mapG = g.node() as SVGGElement;
+
     // Sphere (ocean background)
-    root
+    g
       .append('path')
       .attr('d', path({ type: 'Sphere' })!)
       .attr('class', 'ocean')
@@ -128,7 +149,7 @@
       .attr('stroke', '#0077be');
 
     // Countries layer
-    root
+    g
       .append('g')
       .selectAll('path')
       .data(countries)
@@ -149,6 +170,13 @@
         const count = countryArtistMap.get(d.id)?.length || 0;
         return `${name}: ${count} artist${count === 1 ? '' : 's'}`;
       });
+
+    // Re-apply the previous zoom transform after redraw (e.g., resize)
+    if (mapG) {
+      d3.select(mapG).attr('transform', currentTransform.toString());
+      // Sync internal zoom state so subsequent wheel/drag starts from here
+      root.call((zoom as any).transform, currentTransform);
+    }
 
     // Simple color legend (right-bottom)
     if (max > 0) {
@@ -292,6 +320,9 @@
   }
   :global(svg path.country:active) {
     filter: brightness(0.8);
+  }
+  :global(svg path.country) {
+    vector-effect: non-scaling-stroke;
   }
   :global(svg) {
     user-select: none;
