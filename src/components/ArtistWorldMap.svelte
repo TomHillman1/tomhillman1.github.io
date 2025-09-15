@@ -8,6 +8,7 @@
   import { getArtists } from '../helpers/api';
   import { ArrowLeft } from '@lucide/svelte';
     import { goto } from '../helpers/router';
+    import ArtistModal from './ArtistModal.svelte';
 
   let container: HTMLDivElement;
   let svg: SVGSVGElement;
@@ -22,7 +23,8 @@
       currentTransform = event.transform;
       if (mapG) d3.select(mapG).attr('transform', currentTransform.toString());
     });
-
+  let artistModalOpen = false;
+  let selectedArtistId: string = "";
   let loading = true;
   let error: string | null = null;
 
@@ -252,9 +254,20 @@
   function goBack() {
    goto({ page: 'vinyl' });
   }
+
+  const openArtistModal = (artistId: string) => {
+    artistModalOpen = true;
+    selectedArtistId = artistId;
+  };
+
+
  </script>
 
-<!-- Header: centered title/hint, back button top-right -->
+{#if artistModalOpen}
+  <ArtistModal bind:openState={artistModalOpen} artist_id={selectedArtistId} />
+{/if}
+
+<!-- Header: centered title/hint, back button top-right -->  
 <div class="relative mb-4">
   <button
     type="button"
@@ -270,8 +283,8 @@
     <div class="hint">A global visualisation of the Artists from my Vinyl Collection</div>
   </div>
 </div>
-  
-  <div class="space-y-4">
+
+<div class="space-y-4">
   {#if loading}
     <p class="text-slate-600">Loading artist map…</p>
   {:else if error}
@@ -300,7 +313,7 @@
         {:else}
           <ul class="mt-2 list-disc list-inside space-y-1">
             {#each selectedArtists as a}
-              <li class="text-slate-800 dark:text-slate-200">{a.name}</li>
+              <li class="text-slate-800 dark:text-slate-200 cursor-pointer"><a on:click={openArtistModal(a.id)}>{a.name}</a></li>
             {/each}
           </ul>
         {/if}
@@ -309,7 +322,7 @@
       {/if}
     </div>
   {/if}
-  </div>
+</div>
 
 <style>
   :global(svg path) {
