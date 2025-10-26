@@ -35,7 +35,7 @@
 
 <section>
   <h1 class = "mb-[1rem]">My Vinyl Collection</h1>
-  <div class="hint">A Digitised collection of all of my amazing vinyl.</div>
+  <div class="hint text-surface-600 dark:text-surface-200">A Digitised collection of all of my amazing vinyl.</div>
   <div class="flex-row gap-2 mb-2 flex flex-wrap">
     <div class="input-group grid-cols-[auto_1fr_auto] mt-1 mb-1 w-sm">
       <div class="ig-cell preset-tonal">
@@ -101,7 +101,7 @@
 
 
 <style>
-  .hint { color:#666; margin: .25rem 0 1rem; font-size: .95rem; }
+  .hint {margin: .25rem 0 1rem; font-size: 1.5rem; }
   img.thumb { width: 80x; height: 80px; object-fit: cover; border-radius: 6px; background:#f3f3f3; display:block; }
 
   @media (max-width: 640px) {
