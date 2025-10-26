@@ -8,13 +8,13 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 })
 
 const ensureSession = async (timeoutMs = 2000) => {
-  const { data: { session } } = await supabase.auth.getSession()
-  if (session) return session
+  const { data: { session: s0 } } = await supabase.auth.getSession()
+  if (s0) return s0
 
-  return await new Promise((resolve) => {
+  // Try to restore or catch a fresh sign-in
+  const wait = new Promise((resolve) => {
     let settled = false
     const timer = setTimeout(() => { if (!settled) { settled = true; resolve(null) } }, timeoutMs)
-
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       if (settled) return
       if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
@@ -25,27 +25,31 @@ const ensureSession = async (timeoutMs = 2000) => {
       }
     })
   })
+
+  const restored = await wait
+  if (restored) return restored
+
+  // No session yet -> get one anonymously
+  const { data, error } = await supabase.auth.signInAnonymously()
+  if (error) {
+    console.error('anonymous sign-in failed:', error)
+    return null
+  }
+  return data.session
 }
 
 export const getSignedURL = async (path?: string | null) => {
   if (!path) return null
-
-
   const session = await ensureSession()
-
 
   console.log('session user:', session?.user?.id ?? null)
   console.log('using bearer starts with:', session?.access_token?.slice(0, 16) ?? 'ANON')
 
-  if (!session) {
-    return null
-  }
+  if (!session) return null // couldn’t get a session
+
   const key = path.replace(/^\/+/, '').replace(/\/{2,}/g, '/').trim()
   const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(key, 3600)
-  if (error) {
-    console.error('createSignedUrl error:', error)
-    return null
-  }
+  if (error) { console.error('createSignedUrl error:', error); return null }
   return data.signedUrl
 }
 
