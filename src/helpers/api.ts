@@ -1,11 +1,28 @@
 import { createClient } from '@supabase/supabase-js';
 
-
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const BUCKET = import.meta.env.VITE_SUPABASE_BUCKET || 'media';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
+//SUPABASE AUTH HELPERS
+const ensureSession = async () => {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (session) return session
+  return new Promise((resolve) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+      if (s) { sub.subscription.unsubscribe(); resolve(s) }
+    })
+  })
+}
 
+export const getSignedURL = async(path?: string | null) => {
+    if (!path) return null;
+    await ensureSession()
+    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 3600);
+    return error ? null : data.signedUrl;
+}
+
+// API GETS
 export const getRecords = async () => {
     const { data, error } = await supabase
         .from('records')
@@ -43,15 +60,6 @@ export const getTracks = async (id: string) => {
     }
     return data;
 };
-
-export const getSignedURL = async(path?: string | null) => {
-    if (!path) return null;
-    const { data: { session } } = await supabase.auth.getSession();
-    console.log('session user:', session?.user?.id || null);
-    console.log('using bearer starts with:', session?.access_token?.slice(0,16) || 'ANON');
-    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 3600);
-    return error ? null : data.signedUrl;
-}
 
 export const getTrack = async () => {
     const { data, error } = await supabase
