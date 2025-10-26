@@ -18,6 +18,9 @@ const ensureSession = async () => {
 export const getSignedURL = async(path?: string | null) => {
     if (!path) return null;
     await ensureSession()
+    const { data: { session } } = await supabase.auth.getSession();
+    console.log('session user:', session?.user?.id || null);
+    console.log('using bearer starts with:', session?.access_token?.slice(0,16) || 'ANON');
     const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 3600);
     return error ? null : data.signedUrl;
 }
