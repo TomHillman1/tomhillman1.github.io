@@ -1,5 +1,6 @@
 <script lang="ts">
     export let title: string = 'Experience Title';
+    export let paragraph: string = 'Experience Paragraph';
     let imgSrc: string = 'https://picsum.photos/800/343';
 </script>
 <a
@@ -13,8 +14,7 @@
       <h2 class="h6">{title}</h2>
     </div>
     <p>
-      Lorem ipsum dolor sit amet consectetur adipisicing elit. Numquam aspernatur provident eveniet eligendi cumque consequatur tempore sint
-      nisi sapiente. Iste beatae laboriosam iure molestias cum expedita architecto itaque quae rem.
+      {paragraph}
     </p>
   </article>
 
