@@ -129,3 +129,14 @@ export const getArtist = async (id: string) => {
     }
     return data;
 };
+
+export const getExperiences = async () => {
+    const { data, error } = await supabase
+        .from('experiences')
+        .select('*');
+    if (error) {
+        console.error('Error fetching experiences:', error);
+        return [];
+    }
+    return data;
+};

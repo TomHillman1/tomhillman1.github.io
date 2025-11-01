@@ -35,3 +35,11 @@ export type Artist =
     description: string,       // short bio
 };
   
+export type Experience =
+{
+    id: string,                // uuid
+    name: string,              // experience name
+    description: string,       // experience description
+    mediaurl: string,        // url to media (image/video)
+    isImportant: boolean       // is important experience
+}
