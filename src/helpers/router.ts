@@ -10,7 +10,7 @@ function parseHash(): Route {
   if (page === 'pro') return { page: 'pro' };
   if (page === 'contact') return { page: 'contact' };
   if (page === 'artists') return { page: 'artists' };
-  return { page: 'vinyl' }; // default
+  return { page: 'pro' }; // default
 }
 
 export const route = writable<Route>(parseHash());
