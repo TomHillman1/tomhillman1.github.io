@@ -5,17 +5,16 @@
   import { mapNumbertoChar } from '../helpers/mappers';
   import { Lightbox } from 'svelte-lightbox';
   import { Search } from '@lucide/svelte';
-    import ArtistModal from './ArtistModal.svelte';
+  import ArtistModal from './ArtistModal.svelte';
 
 
   export let id: string | undefined;
 
   let record: Vinyl | null = null;
-  type TrackRow = Track & { audioSignedUrl?: string | null };
-  let tracks: TrackRow[] = [];
+  let tracks: Track[] = [];
   let coverSignedUrl: string | null = null;
   let loading = true, errorMsg = '';
-  let filteredTracks: TrackRow[] = [];
+  let filteredTracks: Track[] = [];
   let artistModalOpen = false;
 
   $: filteredTracks = tracks;
@@ -31,12 +30,7 @@
     
     const tracksdata = await getTracks(id);
 
-    tracks = await Promise.all(
-    (tracksdata ?? []).map(async r => 
-      ({
-        ...r, audioSignedUrl: r.audio_url ? await getSignedURL(r.audio_url) : null
-      }))
-    );
+    tracks = tracksdata;
     // order by side then track
     tracks.sort((a, b) => Number(a.side_no) - Number(b.side_no) || a.track_no - b.track_no);
     loading = false;
@@ -111,12 +105,19 @@
                 <td class="text-left align-top">{t.description}</td>
                 <td>{mapNumbertoChar(t.side_no)}</td>
                 <td>{t.track_no}</td>
-                <td class="text-right">
-                  <audio controls>
-                    <source src={t.audioSignedUrl} type="audio/mp4" />
-                    Your browser does not support the audio element.
-                  </audio>
-                </td>
+                {#if t.audio_url.includes("youtube")}
+                  <td class="text-right">
+                    <iframe class="yt-audio" src="https://www.youtube.com/embed/{(t.audio_url.split(',')[1] || '').trim()}?controls=1&rel=0" title="YouTube audio" loading="lazy" allow="autoplay; encrypted-media"></iframe>
+                  </td>
+                {:else if t.audio_url.includes("music")}
+                  <td class="text-right">
+                    <p>No public audio available</p>
+                  </td>
+                {:else}
+                  <td class="text-right">
+                    <iframe class="spotify-audio" data-testid="embed-iframe" src='https://open.spotify.com/embed/track/{t.audio_url}?utm_source=generator&theme=0' width="100%" height="80" loading="lazy" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"></iframe>
+                  </td>     
+                {/if}
               </tr>
             {/each}
           </tbody>
@@ -134,6 +135,8 @@
 <style>
 
   h1 { margin: 0 0 1rem; }
+  .yt-audio { width: 300px; height: 130px; border: 0; }
+  .spotify-audio { width: 400px; border: 0; border-radius:20px; }
   @media (max-width: 640px) {
     th:nth-child(4), td:nth-child(4) { display:none; }
   }

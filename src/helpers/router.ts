@@ -10,6 +10,7 @@ function parseHash(): Route {
   if (page === 'pro') return { page: 'pro' };
   if (page === 'contact') return { page: 'contact' };
   if (page === 'artists') return { page: 'artists' };
+  if (page === 'vinyl') return { page: 'vinyl' };
   return { page: 'pro' }; // default
 }
 
