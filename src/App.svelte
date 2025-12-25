@@ -14,8 +14,8 @@
 <Navbar />
 
 <main class="max-w-6xl mx-auto px-4 py-8">
-  {#if r.page === 'vinyl'}        <Vinyl />
-  {:else if r.page === 'pro'}     <Professional />
+  {#if r.page === 'pro'} <Professional />
+  {:else if r.page === 'vinyl'} <Vinyl />
   {:else if r.page === 'contact'} <Contact />
   {:else if r.page === 'record'}  <RecordView id={r.params?.id} />
   {:else if r.page === 'artists'}  <ArtistWorldMap/>
