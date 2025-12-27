@@ -313,7 +313,7 @@
         {:else}
           <ul class="mt-2 list-disc list-inside space-y-1">
             {#each selectedArtists as a}
-              <li class="text-slate-800 dark:text-slate-200 cursor-pointer"><a on:click={openArtistModal(a.id)}>{a.name}</a></li>
+              <li class="text-slate-800 dark:text-slate-200 cursor-pointer"><a on:click={() => openArtistModal(a.id)}>{a.name}</a></li>
             {/each}
           </ul>
         {/if}
