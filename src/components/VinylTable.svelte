@@ -19,7 +19,7 @@
   });
 
   function openRecord(id: string) {
-    goto({ page: 'record', params: { id } }); // -> #/record/<id>
+    goto({ page: 'record', params: { id } }); // -> /record/<id>
   }
 
   function openArtists() {

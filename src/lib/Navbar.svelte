@@ -1,13 +1,23 @@
 <script lang="ts">
-  import { view, type View } from '../lib/view';
-  const items: { id: View; label: string }[] = [
+  import { goto, route, type Page } from '../helpers/router';
+
+  type NavPage = Exclude<Page, 'record'>;
+  const items: { id: NavPage; label: string }[] = [
     { id: 'pro', label: 'Professional' },
     { id: 'contact', label: 'Contact' },
     { id: 'vinyl', label: 'Vinyl' },
     { id: 'ps1', label: 'PS1 Games' }
   ];
   let open = false;
-  const go = (id: View) => { view.set(id); open = false; };
+
+  const linkFor = (id: NavPage) => (id === 'pro' ? '/' : `/${id}`);
+
+  const onNavClick = (e: MouseEvent, id: NavPage) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    e.preventDefault();
+    goto({ page: id });
+    open = false;
+  };
 </script>
 
 <nav class="navbar sticky top-0 z-50 border-b border-surface-300/60
@@ -24,13 +34,13 @@
         <div class="hidden md:flex items-center gap-6">
           {#each items as it}
             <a
-              href={"#" + it.id}
-              on:click={() => go(it.id)}
+              href={linkFor(it.id)}
+              on:click={(e) => onNavClick(e, it.id)}
               class="relative px-2 py-1 text-surface-800 hover:text-primary-600"
-              aria-current={$view === it.id ? 'page' : undefined}
+              aria-current={$route.page === it.id ? 'page' : undefined}
             >
               {it.label}
-              {#if $view === it.id}
+              {#if $route.page === it.id}
                 <span class="absolute -bottom-2 left-2 right-2 h-0.5 bg-primary-600 rounded-full"></span>
               {/if}
             </a>
@@ -53,7 +63,7 @@
     <div class="md:hidden border-t border-surface-300/60 bg-surface-100">
       <div class="max-w-6xl mx-auto px-4 py-3 flex flex-col gap-2 text-surface-900">
         {#each items as it}
-          <a href={"#" + it.id} on:click={() => go(it.id)}
+          <a href={linkFor(it.id)} on:click={(e) => onNavClick(e, it.id)}
              class="py-2 hover:text-primary-600">{it.label}</a>
         {/each}
       </div>

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import type { Track, Vinyl } from '../helpers/models';
   import { getRecord, getTracks, getSignedURL, getArtist } from '../helpers/api';
+  import { goto } from '../helpers/router';
   import { mapNumbertoChar } from '../helpers/mappers';
   import { Lightbox } from 'svelte-lightbox';
   import { Search } from '@lucide/svelte';
@@ -54,7 +55,11 @@
 </script>
 
 <section>
-  <a class="text-sm text-primary-600 hover:underline" href="#/vinyl">← All records</a>
+  <a
+    class="text-sm text-primary-600 hover:underline"
+    href="/vinyl"
+    on:click|preventDefault={() => goto({ page: 'vinyl' })}
+  >← All records</a>
   {#if artistModalOpen && record}
     <ArtistModal bind:openState={artistModalOpen} artist_id={record.artist_id} />
   {/if}
