@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { mapPS1Game } from './mappers';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const BUCKET = import.meta.env.VITE_SUPABASE_BUCKET || 'media';
@@ -66,6 +67,19 @@ export const getRecords = async () => {
         return [];
     }
     return data;
+};
+
+export const getPS1Games = async () => {
+    const { data, error } = await supabase
+        .from('psxgames')
+        .select('*')
+        .order('name', { ascending: true })
+        .order('year', { ascending: false });
+    if (error) {
+        console.error('Error fetching PS1 games:', error);
+        return [];
+    }
+    return (data ?? []).map(mapPS1Game);
 };
 
 export const getRecord = async (id: string) => {

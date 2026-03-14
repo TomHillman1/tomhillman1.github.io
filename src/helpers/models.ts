@@ -43,3 +43,29 @@ export type Experience =
     mediaurl: string,        // url to media (image/video)
     isImportant: boolean       // is important experience
 }
+
+export type PS1GameDb =
+{
+    id: string,                // id (serial number)
+    name: string,              // game title
+    release: string | null,    // date of release
+    year: number | null,       // year of release
+    genre: string | null,      // genre (comma separated)
+    developer: string | null,  // developer
+    publisher: string | null,  // publisher
+    created_at: string         // timestamp of doc creation
+}
+
+export type PS1Game =
+{
+    id: string,                // id (serial number)
+    name: string,              // game title
+    release: string | null,    // date of release
+    year: number | null,       // year of release
+    genre: string[],           // genre list
+    developer: string | null,  // developer
+    publisher: string | null,  // publisher
+    createdAt: string,         // timestamp of doc creation
+    coverFront: string,        // storage path for front cover
+    coverBack: string          // storage path for back cover
+}

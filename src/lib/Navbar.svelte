@@ -3,7 +3,8 @@
   const items: { id: View; label: string }[] = [
     { id: 'pro', label: 'Professional' },
     { id: 'contact', label: 'Contact' },
-    { id: 'vinyl', label: 'Vinyl' }
+    { id: 'vinyl', label: 'Vinyl' },
+    { id: 'ps1', label: 'PS1 Games' }
   ];
   let open = false;
   const go = (id: View) => { view.set(id); open = false; };

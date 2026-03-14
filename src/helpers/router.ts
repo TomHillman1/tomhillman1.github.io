@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store';
 
-export type Page = 'vinyl' | 'pro' | 'contact' | 'record' | 'artists';
+export type Page = 'vinyl' | 'ps1' | 'pro' | 'contact' | 'record' | 'artists';
 export type Route = { page: Page; params?: Record<string, string> };
 
 function parseHash(): Route {
@@ -11,6 +11,7 @@ function parseHash(): Route {
   if (page === 'contact') return { page: 'contact' };
   if (page === 'artists') return { page: 'artists' };
   if (page === 'vinyl') return { page: 'vinyl' };
+  if (page === 'ps1') return { page: 'ps1' };
   return { page: 'pro' }; // default
 }
 
