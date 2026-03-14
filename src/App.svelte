@@ -7,7 +7,7 @@
   import Contact from './components/Contact.svelte';
   import RecordView from './components/RecordView.svelte';
   import ArtistWorldMap from './components/ArtistWorldMap.svelte';
-  import PS1Table from './components/PS1Table.svelte';
+  import PS1Page from './components/PS1Page.svelte';
 
   $: r = $route as Route;
 </script>
@@ -17,7 +17,7 @@
 <main class="max-w-6xl mx-auto px-4 py-8">
   {#if r.page === 'pro'} <Professional />
   {:else if r.page === 'vinyl'} <Vinyl />
-  {:else if r.page === 'ps1'} <PS1Table />
+  {:else if r.page === 'ps1'} <PS1Page />
   {:else if r.page === 'contact'} <Contact />
   {:else if r.page === 'record'}  <RecordView id={r.params?.id} />
   {:else if r.page === 'artists'}  <ArtistWorldMap/>
