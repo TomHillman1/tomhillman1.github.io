@@ -5,7 +5,7 @@
 </script>
 
 <section>
-  <PS13DView />
+  <!-- <PS13DView /> -->
   <PS1Table />
 </section>
 
