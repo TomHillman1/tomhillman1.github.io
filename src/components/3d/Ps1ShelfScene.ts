@@ -1,4 +1,11 @@
 import * as THREE from 'three';
+import { GameCase } from './GameCase';
+
+export type ShelfGame = {
+  id: string;
+  frontUrl?: string | null;
+  backUrl?: string | null;
+};
 
 export class Ps1ShelfScene {
   private scene: THREE.Scene;
@@ -6,8 +13,9 @@ export class Ps1ShelfScene {
   private renderer: THREE.WebGLRenderer;
   private frameId: number | null = null;
   private shelfMesh: THREE.Mesh<THREE.BoxGeometry, THREE.MeshStandardMaterial> | null = null;
+  private cases: GameCase[] = [];
 
-  constructor(private container: HTMLElement) {
+  constructor(private container: HTMLElement, games: ShelfGame[] = []) {
     const { clientWidth, clientHeight } = this.container;
 
     // Core scene container and neutral background.
@@ -23,6 +31,7 @@ export class Ps1ShelfScene {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(clientWidth, clientHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.container.appendChild(this.renderer.domElement);
 
     // Basic lighting so the shelf has visible shading.
@@ -33,6 +42,8 @@ export class Ps1ShelfScene {
 
     // Add a single shelf mesh to start with.
     this.createShelf();
+    //Add GameCases for each game on the shelf.
+    this.setGames(games);
     // Start a simple render loop.
     this.start();
 
@@ -50,6 +61,31 @@ export class Ps1ShelfScene {
     shelf.receiveShadow = true;
     this.scene.add(shelf);
     this.shelfMesh = shelf;
+  }
+
+  setGames(games: ShelfGame[]) {
+    this.clearCases();
+    if (!games?.length) return;
+
+    const width = 0.32;
+    const height = 0.24;
+    const depth = 0.02;
+    const spacing = width * 1.1;
+    const startX = -((games.length - 1) * spacing) / 2;
+    const shelfTopY = 0.3 + 0.1;
+
+    games.forEach((game, index) => {
+      const gameCase = new GameCase({
+        width,
+        height,
+        depth,
+        frontUrl: game.frontUrl ?? null,
+        backUrl: game.backUrl ?? null
+      });
+      gameCase.group.position.set(startX + index * spacing, shelfTopY + height / 2, 0);
+      this.scene.add(gameCase.group);
+      this.cases.push(gameCase);
+    });
   }
 
   private start() {
@@ -78,7 +114,16 @@ export class Ps1ShelfScene {
       this.shelfMesh.geometry.dispose();
       this.shelfMesh.material.dispose();
     }
+    this.clearCases();
     this.renderer.dispose();
     this.container.removeChild(this.renderer.domElement);
+  }
+
+  private clearCases() {
+    for (const gameCase of this.cases) {
+      this.scene.remove(gameCase.group);
+      gameCase.dispose();
+    }
+    this.cases = [];
   }
 }

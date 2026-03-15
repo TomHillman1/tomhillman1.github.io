@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import type { PS1Row } from '../helpers/models';
   import { Search } from '@lucide/svelte';
 

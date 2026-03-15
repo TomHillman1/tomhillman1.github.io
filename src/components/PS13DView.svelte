@@ -1,15 +1,19 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Ps1ShelfScene } from './3d/Ps1ShelfScene';
+  import { Ps1ShelfScene, type ShelfGame } from './3d/Ps1ShelfScene';
+
+  export let games: ShelfGame[] = [];
 
   let container: HTMLDivElement | null = null;
   let scene: Ps1ShelfScene | null = null;
 
   onMount(() => {
     if (!container) return;
-    scene = new Ps1ShelfScene(container);
+    scene = new Ps1ShelfScene(container, games);
     return () => scene?.destroy();
   });
+
+  $: if (scene) scene.setGames(games);
 </script>
 
 <section class="ps1-3d">
