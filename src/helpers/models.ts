@@ -69,3 +69,5 @@ export type PS1Game =
     coverFront: string,        // storage path for front cover
     coverBack: string          // storage path for back cover
 }
+
+export type PS1Row = PS1Game & { frontSignedUrl?: string | null; backSignedUrl?: string | null };

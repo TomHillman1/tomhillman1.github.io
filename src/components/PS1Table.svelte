@@ -1,12 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { PS1Game } from '../helpers/models';
-  import { getPS1Games, getSignedURL } from '../helpers/api';
+  import type { PS1Row } from '../helpers/models';
   import { Search } from '@lucide/svelte';
 
-  type PS1Row = PS1Game & { frontSignedUrl?: string | null; backSignedUrl?: string | null };
-
-  let loading = true, errorMsg = '', games: PS1Row[] = [];
+  export let games: PS1Row[] = [];
   let filteredGames: PS1Row[] = [];
   $: filteredGames = games;
 
@@ -16,21 +13,6 @@
     if (!match) return release;
     return `${match[3]}/${match[2]}/${match[1]}`;
   };
-
-  onMount(async () => {
-    const data = await getPS1Games();
-    games = await Promise.all(
-      (data ?? []).map(async g => {
-        const [frontSignedUrl, backSignedUrl] = await Promise.all([
-          getSignedURL(g.coverFront),
-          getSignedURL(g.coverBack)
-        ]);
-        return { ...g, frontSignedUrl, backSignedUrl };
-      })
-    );
-    loading = false;
-  });
-
   const onSearch = (e: Event) => {
     const q = (e.target as HTMLInputElement).value.toLowerCase();
     filteredGames = games.filter(g =>
@@ -76,50 +58,38 @@
           </tr>
         </thead>
         <tbody>
-          {#if loading}
-            <tr><td colspan="9">Loading...</td></tr>
-          {:else if errorMsg}
-            <tr><td colspan="9">{errorMsg}</td></tr>
-          {:else if !games.length}
-            <tr><td colspan="9">No games yet.</td></tr>
-          {:else}
-            {#each filteredGames as g}
-              <tr>
-                <td>
-                  {#if g.frontSignedUrl}
-                    <img class="thumb" src={g.frontSignedUrl} alt={`Front cover of ${g.name}`} />
-                  {:else}
-                    <div class="thumb-placeholder"></div>
-                  {/if}
-                </td>
-                <td>
-                  {#if g.backSignedUrl}
-                    <img class="thumb" src={g.backSignedUrl} alt={`Back cover of ${g.name}`} />
-                  {:else}
-                    <div class="thumb-placeholder"></div>
-                  {/if}
-                </td>
-                <td class="text-left font-mono text-xs">{g.id}</td>
-                <td class="text-left font-bold">{g.name}</td>
-                <td class="text-left">{formatRelease(g.release)}</td>
-                <td class="text-left">{g.year ?? ''}</td>
-                <td class="text-left">{g.genre.join(', ')}</td>
-                <td class="text-left">{g.developer ?? ''}</td>
-                <td class="text-left">{g.publisher ?? ''}</td>
-              </tr>
-            {/each}
-          {/if}
+          {#each filteredGames as g}
+            <tr>
+              <td>
+                {#if g.frontSignedUrl}
+                  <img class="thumb" src={g.frontSignedUrl} alt={`Front cover of ${g.name}`} />
+                {:else}
+                  <div class="thumb-placeholder"></div>
+                {/if}
+              </td>
+              <td>
+                {#if g.backSignedUrl}
+                  <img class="thumb" src={g.backSignedUrl} alt={`Back cover of ${g.name}`} />
+                {:else}
+                  <div class="thumb-placeholder"></div>
+                {/if}
+              </td>
+              <td class="text-left font-mono text-xs">{g.id}</td>
+              <td class="text-left font-bold">{g.name}</td>
+              <td class="text-left">{formatRelease(g.release)}</td>
+              <td class="text-left">{g.year ?? ''}</td>
+              <td class="text-left">{g.genre.join(', ')}</td>
+              <td class="text-left">{g.developer ?? ''}</td>
+              <td class="text-left">{g.publisher ?? ''}</td>
+            </tr>
+          {/each}
         </tbody>
       </table>
     </div>
-    {#if loading}
-      <p class="pl-2 text-left dark:text-surface-200">Loading...</p>
-    {:else}
     <p class="pl-2 text-left dark:text-surface-200">
         {games.length + " games found"}
     </p>
     <div class="h-8"></div>
-    {/if}
   </div>
 </section>
 
