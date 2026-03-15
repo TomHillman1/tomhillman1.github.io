@@ -37,7 +37,7 @@
   {:else if !games.length}
     <p>No games yet.</p>
   {:else}
-    <!-- <PS13DView games={games.map(g => ({ id: g.id, frontUrl: g.frontSignedUrl, backUrl: g.backSignedUrl }))} /> -->
+    <PS13DView games={games.map(g => ({ id: g.id, frontUrl: g.frontSignedUrl, backUrl: g.backSignedUrl }))} />
     <PS1Table {games}/>
   {/if}
 </section>

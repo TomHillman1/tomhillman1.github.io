@@ -14,13 +14,16 @@ export class Ps1ShelfScene {
   private frameId: number | null = null;
   private shelfMesh: THREE.Mesh<THREE.BoxGeometry, THREE.MeshStandardMaterial> | null = null;
   private cases: GameCase[] = [];
+  private activeIndex = 0;
+  private mode: 'browse' | 'inspect-front' | 'inspect-back' = 'browse';
 
   constructor(private container: HTMLElement, games: ShelfGame[] = []) {
     const { clientWidth, clientHeight } = this.container;
 
     // Core scene container and neutral background.
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0xf5f1e8);
+    this.scene.background = new THREE.TextureLoader().load('/public/background.jpg');
+    this.scene.backgroundBlurriness = 0.9;
 
     // Camera framing: slightly above and in front of the shelf.
     this.camera = new THREE.PerspectiveCamera(45, clientWidth / clientHeight, 0.1, 100);
@@ -41,8 +44,8 @@ export class Ps1ShelfScene {
     this.scene.add(ambient, keyLight);
 
     // Add a single shelf mesh to start with.
-    this.createShelf();
-    //Add GameCases for each game on the shelf.
+    this.createShelf(games.length);
+    // Add GameCases for each game on the shelf.
     this.setGames(games);
     // Start a simple render loop.
     this.start();
@@ -52,9 +55,9 @@ export class Ps1ShelfScene {
     window.addEventListener('resize', this.onResize);
   }
 
-  private createShelf() {
+  private createShelf(gameCount: number ) {
     // A simple box stands in for the shelf.
-    const geometry = new THREE.BoxGeometry(4.5, 0.2, 1.2);
+    const geometry = new THREE.BoxGeometry(gameCount * 1.31 + 2, 0.2, 1.2);
     const material = new THREE.MeshStandardMaterial({ color: 0xd6b07a });
     const shelf = new THREE.Mesh(geometry, material);
     shelf.position.set(0, 0.3, 0);
@@ -67,9 +70,9 @@ export class Ps1ShelfScene {
     this.clearCases();
     if (!games?.length) return;
 
-    const width = 0.32;
-    const height = 0.24;
-    const depth = 0.02;
+    const width = 1.31;
+    const height = 1.43;
+    const depth = 0.2;
     const spacing = width * 1.1;
     const startX = -((games.length - 1) * spacing) / 2;
     const shelfTopY = 0.3 + 0.1;
@@ -97,6 +100,7 @@ export class Ps1ShelfScene {
     animate();
   }
 
+  //region Cleanup and generic utilities
   private onResize() {
     // Resize handler to keep the aspect ratio correct.
     const { clientWidth, clientHeight } = this.container;
@@ -126,4 +130,5 @@ export class Ps1ShelfScene {
     }
     this.cases = [];
   }
+  //endregion
 }
