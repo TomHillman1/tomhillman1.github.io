@@ -8,6 +8,8 @@ export type ShelfGame = {
   sideUrl?: string | null;
 };
 
+export type ShelfView = 'front' | 'spine' | 'back';
+
 export class Ps1ShelfScene {
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
@@ -15,8 +17,7 @@ export class Ps1ShelfScene {
   private frameId: number | null = null;
   private shelfMesh: THREE.Mesh<THREE.BoxGeometry, THREE.MeshStandardMaterial> | null = null;
   private cases: GameCase[] = [];
-  private activeIndex = 0;
-  private mode: 'browse' | 'inspect-front' | 'inspect-back' = 'browse';
+  private view: ShelfView = 'front';
 
   constructor(private container: HTMLElement, games: ShelfGame[] = []) {
     const { clientWidth, clientHeight } = this.container;
@@ -90,6 +91,40 @@ export class Ps1ShelfScene {
       gameCase.group.position.set(startX + index * spacing, shelfTopY + height / 2, 0);
       this.scene.add(gameCase.group);
       this.cases.push(gameCase);
+    });
+
+    this.applyView();
+  }
+
+  cycleView() {
+    if (this.view === 'front') this.view = 'spine';
+    else if (this.view === 'spine') this.view = 'back';
+    else this.view = 'front';
+
+    this.applyView();
+    return this.view;
+  }
+
+  getView() {
+    return this.view;
+  }
+
+  private applyView() {
+    if (!this.cases.length) return;
+
+    const frontSpacing = 1.31 * 1.1;
+    const spineSpacing = 0.2 * 1.8;
+    const spacing = this.view === 'spine' ? spineSpacing : frontSpacing;
+    const startX = -((this.cases.length - 1) * spacing) / 2;
+    const rotationY = this.view === 'front'
+      ? 0
+      : this.view === 'spine'
+        ? Math.PI / 2
+        : Math.PI;
+
+    this.cases.forEach((gameCase, index) => {
+      gameCase.group.position.x = startX + index * spacing;
+      gameCase.group.rotation.y = rotationY;
     });
   }
 
