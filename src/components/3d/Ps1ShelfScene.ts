@@ -5,6 +5,7 @@ export type ShelfGame = {
   id: string;
   frontUrl?: string | null;
   backUrl?: string | null;
+  sideUrl?: string | null;
 };
 
 export class Ps1ShelfScene {
@@ -83,7 +84,8 @@ export class Ps1ShelfScene {
         height,
         depth,
         frontUrl: game.frontUrl ?? null,
-        backUrl: game.backUrl ?? null
+        backUrl: game.backUrl ?? null,
+        sideUrl: game.sideUrl ?? null
       });
       gameCase.group.position.set(startX + index * spacing, shelfTopY + height / 2, 0);
       this.scene.add(gameCase.group);

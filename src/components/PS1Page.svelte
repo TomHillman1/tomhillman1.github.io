@@ -13,11 +13,12 @@
       const data = await getPS1Games();
       games = await Promise.all(
         (data ?? []).map(async g => {
-          const [frontSignedUrl, backSignedUrl] = await Promise.all([
+          const [frontSignedUrl, backSignedUrl, sideSignedUrl] = await Promise.all([
             getSignedURL(g.coverFront),
-            getSignedURL(g.coverBack)
+            getSignedURL(g.coverBack),
+            getSignedURL(g.coverSide)
           ]);
-          return { ...g, frontSignedUrl, backSignedUrl };
+          return { ...g, frontSignedUrl, backSignedUrl, sideSignedUrl };
         })
       );
     } catch (err) {
@@ -37,7 +38,12 @@
   {:else if !games.length}
     <p>No games yet.</p>
   {:else}
-    <PS13DView games={games.map(g => ({ id: g.id, frontUrl: g.frontSignedUrl, backUrl: g.backSignedUrl }))} />
+    <PS13DView games={games.map(g => ({
+      id: g.id,
+      frontUrl: g.frontSignedUrl,
+      backUrl: g.backSignedUrl,
+      sideUrl: g.sideSignedUrl
+    }))} />
     <PS1Table {games}/>
   {/if}
 </section>

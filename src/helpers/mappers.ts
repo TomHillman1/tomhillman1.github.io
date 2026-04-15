@@ -20,5 +20,6 @@ export const mapPS1Game = (g: PS1GameDb): PS1Game => ({
     publisher: g.publisher,
     createdAt: g.created_at,
     coverFront: `gamecovers/front/${g.id}.jpg`,
-    coverBack: `gamecovers/back/${g.id}.jpg`
+    coverBack: `gamecovers/back/${g.id}.jpg`,
+    coverSide: `gamecovers/spine/${g.id}.jpg`
 });
