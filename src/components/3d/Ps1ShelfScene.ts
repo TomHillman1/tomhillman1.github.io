@@ -10,6 +10,11 @@ export type ShelfGame = {
 
 export type ShelfView = 'front' | 'spine' | 'back';
 
+type CaseTransform = {
+  x: number;
+  rotationY: number;
+};
+
 export class Ps1ShelfScene {
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
@@ -18,6 +23,13 @@ export class Ps1ShelfScene {
   private shelfMesh: THREE.Mesh<THREE.BoxGeometry, THREE.MeshStandardMaterial> | null = null;
   private cases: GameCase[] = [];
   private view: ShelfView = 'front';
+  private viewAnimation: {
+    startTime: number;
+    durationMs: number;
+    from: CaseTransform[];
+    to: CaseTransform[];
+  } | null = null;
+  private readonly viewAnimationDurationMs = 500;
 
   constructor(private container: HTMLElement, games: ShelfGame[] = []) {
     const { clientWidth, clientHeight } = this.container;
@@ -101,7 +113,7 @@ export class Ps1ShelfScene {
     else if (this.view === 'spine') this.view = 'back';
     else this.view = 'front';
 
-    this.applyView();
+    this.applyView(true);
     return this.view;
   }
 
@@ -109,29 +121,89 @@ export class Ps1ShelfScene {
     return this.view;
   }
 
-  private applyView() {
+  private applyView(animate = false) {
     if (!this.cases.length) return;
 
+    const to = this.getViewTransforms(this.view);
+
+    if (!animate) {
+      this.viewAnimation = null;
+      this.applyTransforms(to);
+      return;
+    }
+
+    this.viewAnimation = {
+      startTime: performance.now(),
+      durationMs: this.viewAnimationDurationMs,
+      from: this.getCurrentTransforms(),
+      to
+    };
+  }
+
+  private getViewTransforms(view: ShelfView): CaseTransform[] {
     const frontSpacing = 1.31 * 1.1;
     const spineSpacing = 0.2 * 1.8;
-    const spacing = this.view === 'spine' ? spineSpacing : frontSpacing;
+    const spacing = view === 'spine' ? spineSpacing : frontSpacing;
     const startX = -((this.cases.length - 1) * spacing) / 2;
-    const rotationY = this.view === 'front'
+    const rotationY = view === 'front'
       ? 0
-      : this.view === 'spine'
+      : view === 'spine'
         ? Math.PI / 2
         : Math.PI;
 
+    return this.cases.map((_, index) => ({
+      x: startX + index * spacing,
+      rotationY
+    }));
+  }
+
+  private getCurrentTransforms(): CaseTransform[] {
+    return this.cases.map((gameCase) => ({
+      x: gameCase.group.position.x,
+      rotationY: gameCase.group.rotation.y
+    }));
+  }
+
+  private applyTransforms(transforms: CaseTransform[]) {
     this.cases.forEach((gameCase, index) => {
-      gameCase.group.position.x = startX + index * spacing;
-      gameCase.group.rotation.y = rotationY;
+      const transform = transforms[index];
+      if (!transform) return;
+      gameCase.group.position.x = transform.x;
+      gameCase.group.rotation.y = transform.rotationY;
     });
   }
 
+  private updateViewAnimation() {
+    if (!this.viewAnimation) return;
+
+    const elapsedMs = performance.now() - this.viewAnimation.startTime;
+    const rawProgress = Math.min(elapsedMs / this.viewAnimation.durationMs, 1);
+    const progress = this.easeInOut(rawProgress);
+    const transforms = this.viewAnimation.to.map((target, index) => {
+      const start = this.viewAnimation!.from[index] ?? target;
+      return {
+        x: THREE.MathUtils.lerp(start.x, target.x, progress),
+        rotationY: THREE.MathUtils.lerp(start.rotationY, target.rotationY, progress)
+      };
+    });
+
+    this.applyTransforms(transforms);
+
+    if (rawProgress >= 1) {
+      this.applyTransforms(this.viewAnimation.to);
+      this.viewAnimation = null;
+    }
+  }
+
+  private easeInOut(t: number) {
+    return t * t * (3 - 2 * t);
+  }
+
   private start() {
-    // Continuous render loop (no animations yet).
+    // Continuous render loop used for both rendering and view animations.
     const animate = () => {
       this.frameId = requestAnimationFrame(animate);
+      this.updateViewAnimation();
       this.renderer.render(this.scene, this.camera);
     };
     animate();
