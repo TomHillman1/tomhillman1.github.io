@@ -49,7 +49,7 @@ export class GameCase {
 
     const spineMesh = new THREE.Mesh(spineGeom, spineMat);
     spineMesh.position.x = -width / 2 - 0.001;
-    spineMesh.rotation.set(0, -Math.PI / 2, Math.PI / 2, 'XYZ');
+    spineMesh.rotation.set(0, -Math.PI / 2, -Math.PI / 2, 'XYZ');
     this.group.add(spineMesh);
 
     this.geometries.push(caseGeom, coverGeom, spineGeom);
