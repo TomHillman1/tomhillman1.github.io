@@ -1,18 +1,34 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Ps1ShelfScene, type ShelfGame, type ShelfView } from './3d/Ps1ShelfScene';
+  import {
+    PS1_SELECTION_CHANGE_EVENT,
+    Ps1ShelfScene,
+    type ShelfGame,
+    type ShelfSelectionChangeDetail,
+    type ShelfView
+  } from './3d/Ps1ShelfScene';
 
   export let games: ShelfGame[] = [];
 
   let container: HTMLDivElement | null = null;
   let scene: Ps1ShelfScene | null = null;
   let currentView: ShelfView = 'front';
+  let selectedGame: ShelfGame | null = null;
 
   onMount(() => {
     if (!container) return;
+
+    const onSelectionChange = (event: Event) => {
+      selectedGame = (event as CustomEvent<ShelfSelectionChangeDetail>).detail.game;
+    };
+
+    container.addEventListener(PS1_SELECTION_CHANGE_EVENT, onSelectionChange);
     scene = new Ps1ShelfScene(container, games);
     currentView = scene.getView();
-    return () => scene?.destroy();
+    return () => {
+      container?.removeEventListener(PS1_SELECTION_CHANGE_EVENT, onSelectionChange);
+      scene?.destroy();
+    };
   });
 
   $: if (scene) scene.setGames(games);
@@ -28,7 +44,14 @@
     <button type="button" on:click={rotateView}>Rotate</button>
     <span>View: {currentView}</span>
   </div>
-  <div class="stage" bind:this={container}></div>
+  <div class="viewport">
+    {#if selectedGame}
+      <div class="selection-overlay">
+        Game selected: {selectedGame.name}
+      </div>
+    {/if}
+    <div class="stage" bind:this={container}></div>
+  </div>
 </section>
 
 <style>
@@ -45,9 +68,23 @@
     border-radius: 6px;
     padding: 0.5rem 0.85rem;
   }
+  .viewport {
+    position: relative;
+  }
+  .selection-overlay {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    z-index: 1;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    background: rgba(17, 24, 39, 0.85);
+    color: #fff;
+    pointer-events: none;
+  }
   .stage {
     width: 100%;
-    height: 320px;
+    height: 480px;
     border-radius: 12px;
     overflow: hidden;
   }

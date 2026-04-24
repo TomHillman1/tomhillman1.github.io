@@ -40,6 +40,7 @@
   {:else}
     <PS13DView games={games.map(g => ({
       id: g.id,
+      name: g.name,
       frontUrl: g.frontSignedUrl,
       backUrl: g.backSignedUrl,
       sideUrl: g.sideSignedUrl
