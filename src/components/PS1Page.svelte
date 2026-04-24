@@ -57,4 +57,5 @@
       <li>Scroll Wheel: Zoom/Unzoom</li>
     </ul>
   </div>
+  <!-- TO-DO FOOTER : "Bookshelf" (https://skfb.ly/6XDPA) by KurtSteiner is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/). -->
 </section>
