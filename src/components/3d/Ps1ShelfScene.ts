@@ -3,6 +3,9 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { GameCase } from './GameCase';
 import bookshelfUrl from '../../assets/bookshelf.glb?url';
 import gameBoyColorUrl from '../../assets/game_boy_color.glb?url';
+import nokiaUrl from '../../assets/nokia_6230.glb?url';
+import discmanUrl from '../../assets/sony_discman_d-181.glb?url';
+import tamagotchiURl from '../../assets/tamagotchi.glb?url';
 
 export type ShelfGame = {
   id: string;
@@ -449,15 +452,14 @@ export class Ps1ShelfScene {
     this.clearShelfProps();
 
     const rowBoxes = this.getShelfRowBoxes();
-    const targetRow = rowBoxes[this.shelfPropRowIndex];
-    if (!targetRow) return;
+   
 
     try {
       const gameBoy = await this.loadShelfProp({
         loadVersion,
         url: gameBoyColorUrl,
-        rowBox: targetRow,
-        rowIndex: this.shelfPropRowIndex,
+        rowBox: rowBoxes[1],
+        rowIndex: 1,
         rotationY: 0
       });
 
@@ -465,8 +467,48 @@ export class Ps1ShelfScene {
         this.scene.add(gameBoy);
         this.shelfPropObjects.push(gameBoy);
       }
+
+      const nokia = await this.loadShelfProp({ 
+        loadVersion,
+        url: nokiaUrl,
+        rowBox: rowBoxes[0],
+        rowIndex: 0,
+        rotationY: Math.PI
+      });
+
+      if (nokia) {
+        this.scene.add(nokia);
+        this.shelfPropObjects.push(nokia);
+      } 
+
+      const discman = await this.loadShelfProp({ 
+        loadVersion,
+        url: discmanUrl,
+        rowBox: rowBoxes[2],
+        rowIndex: 2,
+        rotationY: 0
+      });
+
+      if (discman) {
+        this.scene.add(discman);
+        this.shelfPropObjects.push(discman);
+      } 
+
+      const tamagotchi = await this.loadShelfProp({ 
+        loadVersion,
+        url: tamagotchiURl,
+        rowBox: rowBoxes[3],
+        rowIndex: 3,
+        rotationY: 0
+      });
+
+      if (tamagotchi) {
+        this.scene.add(tamagotchi);
+        this.shelfPropObjects.push(tamagotchi);
+      } 
+
     } catch (err) {
-      console.warn('Failed to load shelf prop:', gameBoyColorUrl, err);
+      console.warn('Failed to load shelf prop:', err);
     }
   }
 
