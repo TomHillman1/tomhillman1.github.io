@@ -31,12 +31,14 @@
 </script>
 
 <section>
+  <h1 class="mb-[1rem]">PS1 Games</h1>
+  <div class="hint text-surface-600 dark:text-surface-200">A digitized collection of my PlayStation 1 games.</div>
   {#if loading}
     <p>Loading...</p>
   {:else if errorMsg}
     <p>{errorMsg}</p>
   {:else if !games.length}
-    <p>No games yet.</p>
+    <p>No games found.</p>
   {:else}
     <PS13DView games={games.map(g => ({
       id: g.id,
@@ -45,6 +47,6 @@
       backUrl: g.backSignedUrl,
       sideUrl: g.sideSignedUrl
     }))} />
-    <PS1Table {games}/>
+    <!-- <PS1Table {games}/> -->
   {/if}
 </section>

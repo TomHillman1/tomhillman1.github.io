@@ -33,7 +33,7 @@ export class Ps1ShelfScene {
   private selectionProgress: number[] = [];
   private spinAngles: number[] = [];
   private selectedIndex: number | null = null;
-  private view: ShelfView = 'front';
+  private view: ShelfView = 'spine';
   private cameraTarget = new THREE.Vector3(0, 0.6, 0);
   private pressedKeys = new Set<string>();
   private viewAnimation: {
@@ -99,7 +99,7 @@ export class Ps1ShelfScene {
 
   private createShelf(gameCount: number ) {
     // A simple box stands in for the shelf.
-    const geometry = new THREE.BoxGeometry(gameCount * 1.31 + 2, 0.2, 1.2);
+    const geometry = new THREE.BoxGeometry(gameCount * 0.4, 0.2, 1.2);
     const material = new THREE.MeshStandardMaterial({ color: 0xd6b07a });
     const shelf = new THREE.Mesh(geometry, material);
     shelf.position.set(0, 0.3, 0);
@@ -144,15 +144,6 @@ export class Ps1ShelfScene {
     this.selectedIndex = null;
     this.applyView();
     this.dispatchSelectionChange();
-  }
-
-  cycleView() {
-    if (this.view === 'front') this.view = 'spine';
-    else if (this.view === 'spine') this.view = 'back';
-    else this.view = 'front';
-
-    this.applyView(true);
-    return this.view;
   }
 
   getView() {

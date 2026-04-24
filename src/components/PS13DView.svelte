@@ -33,17 +33,10 @@
 
   $: if (scene) scene.setGames(games);
 
-  function rotateView() {
-    if (!scene) return;
-    currentView = scene.cycleView();
-  }
+
 </script>
 
 <section class="ps1-3d">
-  <div class="controls">
-    <button type="button" on:click={rotateView}>Rotate</button>
-    <span>View: {currentView}</span>
-  </div>
   <div class="viewport">
     {#if selectedGame}
       <div class="selection-overlay">
