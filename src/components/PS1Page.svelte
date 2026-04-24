@@ -32,7 +32,7 @@
 
 <section>
   <h1 class="mb-[1rem]">PS1 Games</h1>
-  <div class="hint text-surface-600 dark:text-surface-200">A digitized collection of my PlayStation 1 games.</div>
+  <div class="hint text-surface-600 dark:text-surface-200 pb-8">A digitized collection of my PlayStation 1 games.</div>
   {#if loading}
     <p>Loading...</p>
   {:else if errorMsg}
@@ -49,4 +49,12 @@
     }))} />
     <!-- <PS1Table {games}/> -->
   {/if}
+  <div class="my-4 w-full text-left">
+    <b>Controls:</b>
+    <ul class="list-disc pl-6">
+      <li>WASD/Arrows: Move Camera</li>
+      <li>Left Click: Select Game</li>
+      <li>Scroll Wheel: Zoom/Unzoom</li>
+    </ul>
+  </div>
 </section>

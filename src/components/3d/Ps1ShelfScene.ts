@@ -24,6 +24,11 @@ export class Ps1ShelfScene {
   private renderer: THREE.WebGLRenderer;
   private raycaster = new THREE.Raycaster();
   private pointer = new THREE.Vector2();
+  private cameraTarget = new THREE.Vector3(0, 0.6, 0);
+  private freeCameraPosition = new THREE.Vector3(0, 1.2, 4);
+  private freeCameraTarget = new THREE.Vector3(0, 0.6, 0);
+  private cameraDesiredPosition = new THREE.Vector3(0, 1.2, 4);
+  private cameraDesiredTarget = new THREE.Vector3(0, 0.6, 0);
   private frameId: number | null = null;
   private lastFrameTime = performance.now();
   private shelfMesh: THREE.Mesh<THREE.BoxGeometry, THREE.MeshStandardMaterial> | null = null;
@@ -34,7 +39,6 @@ export class Ps1ShelfScene {
   private spinAngles: number[] = [];
   private selectedIndex: number | null = null;
   private view: ShelfView = 'spine';
-  private cameraTarget = new THREE.Vector3(0, 0.6, 0);
   private pressedKeys = new Set<string>();
   private viewAnimation: {
     startTime: number;
@@ -43,13 +47,19 @@ export class Ps1ShelfScene {
     to: CaseTransform[];
   } | null = null;
   private readonly viewAnimationDurationMs = 500;
+  private readonly cameraFocusDamping = 8;
   private readonly cameraMoveSpeed = 2.4;
   private readonly cameraZoomSpeed = 0.01;
   private readonly cameraMinDistance = 1.5;
   private readonly cameraMaxDistance = 10;
+  private readonly selectedCameraYOffset = 0.1;
+  private readonly selectedCameraDefaultDistance = 2.1;
+  private readonly selectedCameraMinDistance = 1.2;
+  private readonly selectedCameraMaxDistance = 6;
+  private selectedCameraDistance = 2.1;
   private readonly selectionOffsetZ = 1.2;
   private readonly selectionProgressDamping = 10;
-  private readonly selectionSpinSpeed = Math.PI * 1.25;
+  private readonly selectionSpinSpeed = Math.PI * 0.5;
 
   constructor(private container: HTMLElement, games: ShelfGame[] = []) {
     const { clientWidth, clientHeight } = this.container;
@@ -61,7 +71,7 @@ export class Ps1ShelfScene {
 
     // Camera framing: slightly above and in front of the shelf.
     this.camera = new THREE.PerspectiveCamera(45, clientWidth / clientHeight, 0.1, 100);
-    this.camera.position.set(0, 1.2, 4);
+    this.camera.position.copy(this.freeCameraPosition);
     this.camera.lookAt(this.cameraTarget);
 
     // WebGL renderer bound to the provided DOM container.
@@ -247,6 +257,62 @@ export class Ps1ShelfScene {
     });
   }
 
+  private updateCameraFocus(deltaSeconds: number) {
+    if (this.selectedIndex !== null) {
+      const selectedCase = this.cases[this.selectedIndex];
+      if (selectedCase) {
+        this.cameraDesiredTarget.copy(selectedCase.group.position);
+        this.cameraDesiredTarget.y = selectedCase.group.position.y;
+        this.cameraDesiredPosition.copy(this.cameraDesiredTarget);
+        this.cameraDesiredPosition.y += this.selectedCameraYOffset;
+        this.cameraDesiredPosition.z += this.selectedCameraDistance;
+      }
+    } else {
+      this.cameraDesiredPosition.copy(this.freeCameraPosition);
+      this.cameraDesiredTarget.copy(this.freeCameraTarget);
+    }
+
+    this.camera.position.x = THREE.MathUtils.damp(
+      this.camera.position.x,
+      this.cameraDesiredPosition.x,
+      this.cameraFocusDamping,
+      deltaSeconds
+    );
+    this.camera.position.y = THREE.MathUtils.damp(
+      this.camera.position.y,
+      this.cameraDesiredPosition.y,
+      this.cameraFocusDamping,
+      deltaSeconds
+    );
+    this.camera.position.z = THREE.MathUtils.damp(
+      this.camera.position.z,
+      this.cameraDesiredPosition.z,
+      this.cameraFocusDamping,
+      deltaSeconds
+    );
+
+    this.cameraTarget.x = THREE.MathUtils.damp(
+      this.cameraTarget.x,
+      this.cameraDesiredTarget.x,
+      this.cameraFocusDamping,
+      deltaSeconds
+    );
+    this.cameraTarget.y = THREE.MathUtils.damp(
+      this.cameraTarget.y,
+      this.cameraDesiredTarget.y,
+      this.cameraFocusDamping,
+      deltaSeconds
+    );
+    this.cameraTarget.z = THREE.MathUtils.damp(
+      this.cameraTarget.z,
+      this.cameraDesiredTarget.z,
+      this.cameraFocusDamping,
+      deltaSeconds
+    );
+
+    this.camera.lookAt(this.cameraTarget);
+  }
+
   private easeInOut(t: number) {
     return t * t * (3 - 2 * t);
   }
@@ -261,6 +327,7 @@ export class Ps1ShelfScene {
       this.updateCameraMovement(deltaSeconds);
       this.updateViewAnimation();
       this.updateSelectionAnimation(deltaSeconds);
+      this.updateCameraFocus(deltaSeconds);
       this.renderer.render(this.scene, this.camera);
     };
     animate();
@@ -270,6 +337,11 @@ export class Ps1ShelfScene {
   private onKeyDown(event: KeyboardEvent) {
     const key = this.mapMovementKey(event.key);
     if (!key || this.isTypingTarget(event.target)) return;
+
+    if (this.selectedIndex !== null) {
+      this.releaseSelectionToCurrentCamera();
+    }
+
     this.pressedKeys.add(key);
     event.preventDefault();
   }
@@ -296,7 +368,7 @@ export class Ps1ShelfScene {
   }
 
   private updateCameraMovement(deltaSeconds: number) {
-    if (!this.pressedKeys.size) return;
+    if (this.selectedIndex !== null || !this.pressedKeys.size) return;
 
     const direction = new THREE.Vector2(
       (this.pressedKeys.has('right') ? 1 : 0) - (this.pressedKeys.has('left') ? 1 : 0),
@@ -307,17 +379,25 @@ export class Ps1ShelfScene {
 
     direction.normalize().multiplyScalar(this.cameraMoveSpeed * deltaSeconds);
 
-    this.camera.position.x += direction.x;
-    this.camera.position.y = THREE.MathUtils.clamp(this.camera.position.y + direction.y, 0.6, 3.5);
-    this.cameraTarget.x += direction.x;
-    this.cameraTarget.y = THREE.MathUtils.clamp(this.cameraTarget.y + direction.y, 0.2, 2.9);
-    this.camera.lookAt(this.cameraTarget);
+    this.freeCameraPosition.x += direction.x;
+    this.freeCameraPosition.y = THREE.MathUtils.clamp(this.freeCameraPosition.y + direction.y, 0.6, 3.5);
+    this.freeCameraTarget.x += direction.x;
+    this.freeCameraTarget.y = THREE.MathUtils.clamp(this.freeCameraTarget.y + direction.y, 0.2, 2.9);
   }
 
   private onWheel(event: WheelEvent) {
     event.preventDefault();
 
-    const cameraOffset = this.camera.position.clone().sub(this.cameraTarget);
+    if (this.selectedIndex !== null) {
+      this.selectedCameraDistance = THREE.MathUtils.clamp(
+        this.selectedCameraDistance + event.deltaY * this.cameraZoomSpeed,
+        this.selectedCameraMinDistance,
+        this.selectedCameraMaxDistance
+      );
+      return;
+    }
+
+    const cameraOffset = this.freeCameraPosition.clone().sub(this.freeCameraTarget);
     const currentDistance = cameraOffset.length();
     if (!currentDistance) return;
 
@@ -328,8 +408,7 @@ export class Ps1ShelfScene {
     );
 
     cameraOffset.setLength(nextDistance);
-    this.camera.position.copy(this.cameraTarget.clone().add(cameraOffset));
-    this.camera.lookAt(this.cameraTarget);
+    this.freeCameraPosition.copy(this.freeCameraTarget.clone().add(cameraOffset));
   }
 
   private onClick(event: MouseEvent) {
@@ -349,7 +428,16 @@ export class Ps1ShelfScene {
   private setSelectedIndex(index: number | null) {
     if (this.selectedIndex === index) return;
     this.selectedIndex = index;
+    if (index !== null) {
+      this.selectedCameraDistance = this.selectedCameraDefaultDistance;
+    }
     this.dispatchSelectionChange();
+  }
+
+  private releaseSelectionToCurrentCamera() {
+    this.freeCameraPosition.copy(this.camera.position);
+    this.freeCameraTarget.copy(this.cameraTarget);
+    this.setSelectedIndex(null);
   }
 
   private dispatchSelectionChange() {
