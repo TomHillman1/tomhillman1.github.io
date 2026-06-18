@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { GameCase } from './GameCase';
+import { loadTexture } from './materials';
 import bookshelfUrl from '../../assets/bookshelf.glb?url';
 import gameBoyColorUrl from '../../assets/game_boy_color.glb?url';
 import nokiaUrl from '../../assets/nokia_6230.glb?url';
@@ -18,6 +19,13 @@ export type ShelfGame = {
 export type ShelfView = 'front' | 'spine' | 'back';
 export type ShelfSelectionChangeDetail = { game: ShelfGame | null };
 export const PS1_SELECTION_CHANGE_EVENT = 'ps1-selection-change';
+export type ShelfLoadingProgressDetail = {
+  active: boolean;
+  loaded: number;
+  total: number;
+  progress: number;
+};
+export const PS1_LOADING_PROGRESS_EVENT = 'ps1-loading-progress';
 
 type CaseTransform = {
   x: number;
@@ -56,6 +64,7 @@ export class Ps1ShelfScene {
   private cameraDesiredTarget = new THREE.Vector3(0, 0.6, 0);
   private frameId: number | null = null;
   private lastFrameTime = performance.now();
+  private backgroundTexture: THREE.Texture | null = null;
   private shelfObject: THREE.Object3D | null = null;
   private shelfPropObjects: THREE.Object3D[] = [];
   private shelfBounds: THREE.Box3 | null = null;
@@ -77,6 +86,9 @@ export class Ps1ShelfScene {
   private shelfLoadVersion = 0;
   private shelfGameCount = -1;
   private isDestroyed = false;
+  private trackedPendingLoads = 0;
+  private trackedBatchTotalLoads = 0;
+  private trackedBatchLoadedLoads = 0;
   private readonly viewAnimationDurationMs = 500;
   private readonly cameraFocusDamping = 8;
   private readonly cameraMoveSpeed = 2.4;
@@ -113,8 +125,8 @@ export class Ps1ShelfScene {
 
     // Core scene container and neutral background.
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.TextureLoader().load('/src/assets/background.jpg');
     this.scene.backgroundBlurriness = 0.9;
+    void this.loadBackground();
 
     // Camera framing: slightly above and in front of the shelf.
     this.camera = new THREE.PerspectiveCamera(45, clientWidth / clientHeight, 0.1, 100);
@@ -154,6 +166,66 @@ export class Ps1ShelfScene {
     this.renderer.domElement.addEventListener('click', this.onClick);
   }
 
+  private async loadBackground() {
+    try {
+      const texture = await this.trackAssetLoad(loadTexture('/src/assets/background.jpg'));
+      if (this.isDestroyed) {
+        texture.dispose();
+        return;
+      }
+
+      this.backgroundTexture?.dispose();
+      this.backgroundTexture = texture;
+      this.scene.background = texture;
+    } catch (err) {
+      console.warn('Failed to load scene background texture.', err);
+    }
+  }
+
+  private trackAssetLoad<T>(promise: Promise<T>) {
+    this.beginTrackedLoad();
+    return promise.finally(() => {
+      this.finishTrackedLoad();
+    });
+  }
+
+  private beginTrackedLoad() {
+    if (this.trackedPendingLoads === 0) {
+      this.trackedBatchTotalLoads = 0;
+      this.trackedBatchLoadedLoads = 0;
+    }
+
+    this.trackedPendingLoads += 1;
+    this.trackedBatchTotalLoads += 1;
+    this.dispatchLoadingProgress();
+  }
+
+  private finishTrackedLoad() {
+    if (this.trackedPendingLoads > 0) {
+      this.trackedPendingLoads -= 1;
+    }
+    this.trackedBatchLoadedLoads = Math.min(
+      this.trackedBatchLoadedLoads + 1,
+      this.trackedBatchTotalLoads
+    );
+    this.dispatchLoadingProgress();
+  }
+
+  private dispatchLoadingProgress() {
+    const total = this.trackedBatchTotalLoads;
+    const loaded = this.trackedBatchLoadedLoads;
+    const progress = total === 0 ? 1 : Math.min(loaded / total, 1);
+
+    this.container.dispatchEvent(new CustomEvent<ShelfLoadingProgressDetail>(PS1_LOADING_PROGRESS_EVENT, {
+      detail: {
+        active: this.trackedPendingLoads > 0,
+        loaded,
+        total,
+        progress
+      }
+    }));
+  }
+
   private createShelf(gameCount: number) {
     this.shelfGameCount = gameCount;
     const loadVersion = ++this.shelfLoadVersion;
@@ -164,7 +236,7 @@ export class Ps1ShelfScene {
     this.clearShelf();
 
     try {
-      const gltf = await Ps1ShelfScene.gltfLoader.loadAsync(bookshelfUrl);
+      const gltf = await this.trackAssetLoad(Ps1ShelfScene.gltfLoader.loadAsync(bookshelfUrl));
       if (this.isDestroyed || loadVersion !== this.shelfLoadVersion) {
         this.disposeObjectResources(gltf.scene);
         return;
@@ -329,7 +401,8 @@ export class Ps1ShelfScene {
         depth,
         frontUrl: game.frontUrl ?? null,
         backUrl: game.backUrl ?? null,
-        sideUrl: game.sideUrl ?? null
+        sideUrl: game.sideUrl ?? null,
+        trackAssetLoad: (promise) => this.trackAssetLoad(promise)
       });
       gameCase.group.userData.caseIndex = index;
       this.scene.add(gameCase.group);
@@ -452,61 +525,35 @@ export class Ps1ShelfScene {
     this.clearShelfProps();
 
     const rowBoxes = this.getShelfRowBoxes();
-   
+    const propConfigs = [
+      { url: gameBoyColorUrl, rowBox: rowBoxes[1], rowIndex: 1, rotationY: 0 },
+      { url: nokiaUrl, rowBox: rowBoxes[0], rowIndex: 0, rotationY: Math.PI },
+      { url: discmanUrl, rowBox: rowBoxes[2], rowIndex: 2, rotationY: 0 },
+      { url: tamagotchiURl, rowBox: rowBoxes[3], rowIndex: 3, rotationY: 0 }
+    ].filter((config): config is {
+      url: string;
+      rowBox: THREE.Box3;
+      rowIndex: number;
+      rotationY: number;
+    } => Boolean(config.rowBox));
+
+    if (!propConfigs.length) return;
 
     try {
-      const gameBoy = await this.loadShelfProp({
-        loadVersion,
-        url: gameBoyColorUrl,
-        rowBox: rowBoxes[1],
-        rowIndex: 1,
-        rotationY: 0
+      const props = await Promise.all(
+        propConfigs.map((config) => this.loadShelfProp({
+          loadVersion,
+          url: config.url,
+          rowBox: config.rowBox,
+          rowIndex: config.rowIndex,
+          rotationY: config.rotationY
+        }))
+      );
+
+      props.filter((prop): prop is THREE.Object3D => prop !== null).forEach((prop) => {
+        this.scene.add(prop);
+        this.shelfPropObjects.push(prop);
       });
-
-      if (gameBoy) {
-        this.scene.add(gameBoy);
-        this.shelfPropObjects.push(gameBoy);
-      }
-
-      const nokia = await this.loadShelfProp({ 
-        loadVersion,
-        url: nokiaUrl,
-        rowBox: rowBoxes[0],
-        rowIndex: 0,
-        rotationY: Math.PI
-      });
-
-      if (nokia) {
-        this.scene.add(nokia);
-        this.shelfPropObjects.push(nokia);
-      } 
-
-      const discman = await this.loadShelfProp({ 
-        loadVersion,
-        url: discmanUrl,
-        rowBox: rowBoxes[2],
-        rowIndex: 2,
-        rotationY: 0
-      });
-
-      if (discman) {
-        this.scene.add(discman);
-        this.shelfPropObjects.push(discman);
-      } 
-
-      const tamagotchi = await this.loadShelfProp({ 
-        loadVersion,
-        url: tamagotchiURl,
-        rowBox: rowBoxes[3],
-        rowIndex: 3,
-        rotationY: 0
-      });
-
-      if (tamagotchi) {
-        this.scene.add(tamagotchi);
-        this.shelfPropObjects.push(tamagotchi);
-      } 
-
     } catch (err) {
       console.warn('Failed to load shelf prop:', err);
     }
@@ -519,7 +566,7 @@ export class Ps1ShelfScene {
     rowIndex: number;
     rotationY: number;
   }) {
-    const gltf = await Ps1ShelfScene.gltfLoader.loadAsync(options.url);
+    const gltf = await this.trackAssetLoad(Ps1ShelfScene.gltfLoader.loadAsync(options.url));
     if (this.isDestroyed || options.loadVersion !== this.shelfLoadVersion) {
       this.disposeObjectResources(gltf.scene);
       return null;
@@ -882,6 +929,8 @@ export class Ps1ShelfScene {
     this.renderer.domElement.removeEventListener('click', this.onClick);
     this.clearShelf();
     this.clearCases();
+    this.backgroundTexture?.dispose();
+    this.backgroundTexture = null;
     this.renderer.dispose();
     this.container.removeChild(this.renderer.domElement);
   }

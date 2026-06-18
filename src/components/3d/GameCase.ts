@@ -9,17 +9,20 @@ export type GameCaseOptions = {
   backUrl?: string | null;
   sideUrl?: string | null;
   caseColor?: number;
+  trackAssetLoad?: <T>(promise: Promise<T>) => Promise<T>;
 };
 
 export class GameCase {
   public group: THREE.Group;
   private geometries: THREE.BufferGeometry[] = [];
   private materials: THREE.Material[] = [];
+  private readonly trackAssetLoad?: <T>(promise: Promise<T>) => Promise<T>;
 
   constructor(options: GameCaseOptions) {
     const width = options.width ?? 0.32;
     const height = options.height ?? 0.24;
     const depth = options.depth ?? 0.02;
+    this.trackAssetLoad = options.trackAssetLoad;
 
     this.group = new THREE.Group();
 
@@ -63,7 +66,8 @@ export class GameCase {
   private async applyTexture(material: THREE.MeshStandardMaterial, url?: string | null) {
     if (!url) return;
     try {
-      const texture = await loadTexture(url);
+      const texturePromise = this.trackAssetLoad ? this.trackAssetLoad(loadTexture(url)) : loadTexture(url);
+      const texture = await texturePromise;
       material.map = texture;
       material.needsUpdate = true;
     } catch (err) {
