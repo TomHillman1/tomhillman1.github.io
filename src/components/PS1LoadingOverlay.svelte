@@ -11,10 +11,12 @@
   let fadingOut = false;
   let videoEnded = false;
   let audioEnabled = false;
+  let skipRequested = false;
   let videoEl: HTMLVideoElement | null = null;
   let hideTimeout: ReturnType<typeof setTimeout> | null = null;
-
-  const loadPercent = () => Math.max(0, Math.min(100, Math.round(progress * 100)));
+  let loadPercent = 0;
+  let assetsReady = !active;
+  let canSkipIntro = assetsReady && !videoEnded;
 
   async function enableAudio() {
     if (!videoEl) return;
@@ -30,10 +32,8 @@
   }
 
   async function startIntroPlayback() {
-    if (!videoEl || !active) return;
+    if (!videoEl || videoEnded) return;
 
-    videoEnded = false;
-    videoEl.currentTime = 0;
     videoEl.muted = !audioEnabled;
 
     try {
@@ -47,16 +47,36 @@
     videoEnded = true;
   }
 
-  $: if (active) {
+  function requestSkip() {
+    if (!assetsReady) return;
+    skipRequested = true;
+  }
+
+  function resetOverlayCycle() {
+    skipRequested = false;
+    videoEnded = false;
     overlayVisible = true;
     fadingOut = false;
     if (hideTimeout) {
       clearTimeout(hideTimeout);
       hideTimeout = null;
     }
+    if (videoEl) {
+      videoEl.pause();
+      videoEl.currentTime = 0;
+      void startIntroPlayback();
+    }
   }
 
-  $: if (!active && overlayVisible && !fadingOut) {
+  $: if (active && (!overlayVisible || fadingOut)) {
+    resetOverlayCycle();
+  }
+
+  $: assetsReady = !active;
+  $: loadPercent = Math.max(0, Math.min(100, Math.round(progress * 100)));
+  $: canSkipIntro = assetsReady && !videoEnded;
+
+  $: if (!active && overlayVisible && !fadingOut && (videoEnded || skipRequested)) {
     fadingOut = true;
     hideTimeout = setTimeout(() => {
       overlayVisible = false;
@@ -66,13 +86,13 @@
     }, 420);
   }
 
-  $: if (active && overlayVisible && videoEl) {
+  $: if (overlayVisible && videoEl && videoEl.paused && videoEl.currentTime === 0 && !videoEnded) {
     void startIntroPlayback();
   }
 </script>
 
 {#if overlayVisible}
-  <div class:fade-out={fadingOut} class="loading-overlay" aria-hidden={!active}>
+  <div class:fade-out={fadingOut} class="loading-overlay" aria-hidden={!overlayVisible}>
     <div class="boot-stage">
       <video
         bind:this={videoEl}
@@ -91,21 +111,35 @@
         <img alt="PlayStation startup still" class="still-image" src={ps1LoadStillUrl} />
       </div>
 
-      {#if active && !audioEnabled}
+      {#if !audioEnabled}
         <button class="audio-toggle" type="button" on:click={enableAudio}>
           Enable audio
+        </button>
+      {/if}
+
+      {#if canSkipIntro}
+        <button class="skip-toggle" type="button" on:click={requestSkip}>
+          Skip intro
         </button>
       {/if}
     </div>
 
     <div class="loading-hud">
       <div class="loading-meta">
-        <span class="loading-label">Reading memory card...</span>
-        <span class="loading-value">{loadPercent()}%</span>
+        <span class="loading-label">
+          {#if active}
+            Reading memory card...
+          {:else if videoEnded}
+            Boot complete...
+          {:else}
+            System ready. Skip intro or wait...
+          {/if}
+        </span>
+        <span class="loading-value">{loadPercent}%</span>
       </div>
-      <div class="loading-bar-frame" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={loadPercent()}>
+      <div class="loading-bar-frame" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={loadPercent}>
         <div class="loading-bar-track">
-          <div class="loading-bar-fill" style={`width: ${loadPercent()}%`}></div>
+          <div class="loading-bar-fill" style={`width: ${loadPercent}%`}></div>
         </div>
       </div>
       <div class="loading-count">{loaded}/{Math.max(total, 1)} assets</div>
@@ -176,10 +210,26 @@
   .audio-toggle {
     position: absolute;
     top: 1rem;
-    right: 1rem;
+    left: 1rem;
     border: 1px solid rgba(255, 255, 255, 0.24);
     background: rgba(0, 0, 0, 0.66);
     color: #f8f8f8;
+    border-radius: 999px;
+    padding: 0.6rem 0.95rem;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    backdrop-filter: blur(12px);
+  }
+
+  .skip-toggle {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
     border-radius: 999px;
     padding: 0.6rem 0.95rem;
     font-size: 0.72rem;
@@ -249,8 +299,15 @@
   @media (max-width: 640px) {
     .audio-toggle {
       top: auto;
-      right: 50%;
+      left: 50%;
       bottom: 5.2rem;
+      transform: translateX(-50%);
+    }
+
+    .skip-toggle {
+      top: auto;
+      right: 50%;
+      bottom: 2rem;
       transform: translateX(50%);
     }
 
