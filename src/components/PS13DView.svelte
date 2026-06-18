@@ -12,6 +12,7 @@
   } from './3d/Ps1ShelfScene';
 
   export let games: ShelfGame[] = [];
+  export let fetchLoading = false;
 
   let container: HTMLDivElement | null = null;
   let viewportEl: HTMLDivElement | null = null;
@@ -23,6 +24,30 @@
   let loadingLoaded = 0;
   let loadingTotal = 1;
   let isFullscreen = false;
+  let mounted = false;
+  let overlayActive = true;
+  let overlayProgress = 0;
+  let overlayLoaded = 0;
+  let overlayTotal = 1;
+  let overlayStatusText: string | null = null;
+  let overlayCountText: string | null = null;
+
+  function createScene() {
+    if (!container || scene) return;
+    scene = new Ps1ShelfScene(container, games);
+    currentView = scene.getView();
+  }
+
+  function destroyScene() {
+    scene?.destroy();
+    scene = null;
+    currentView = 'front';
+    selectedGame = null;
+    loadingActive = true;
+    loadingProgress = 0;
+    loadingLoaded = 0;
+    loadingTotal = 1;
+  }
 
   async function toggleFullscreen() {
     if (!viewportEl) return;
@@ -60,18 +85,29 @@
     container.addEventListener(PS1_SELECTION_CHANGE_EVENT, onSelectionChange);
     container.addEventListener(PS1_LOADING_PROGRESS_EVENT, onLoadingProgress);
     document.addEventListener('fullscreenchange', syncFullscreenState);
-    scene = new Ps1ShelfScene(container, games);
-    currentView = scene.getView();
+    mounted = true;
     syncFullscreenState();
     return () => {
+      mounted = false;
       container?.removeEventListener(PS1_SELECTION_CHANGE_EVENT, onSelectionChange);
       container?.removeEventListener(PS1_LOADING_PROGRESS_EVENT, onLoadingProgress);
       document.removeEventListener('fullscreenchange', syncFullscreenState);
-      scene?.destroy();
+      destroyScene();
     };
   });
 
+  $: if (mounted && container && !scene && !fetchLoading) {
+    createScene();
+  }
+
   $: if (scene) scene.setGames(games);
+
+  $: overlayActive = fetchLoading || !scene || loadingActive;
+  $: overlayProgress = fetchLoading ? 0 : loadingProgress;
+  $: overlayLoaded = fetchLoading ? 0 : loadingLoaded;
+  $: overlayTotal = fetchLoading ? 0 : loadingTotal;
+  $: overlayStatusText = fetchLoading ? 'Loading game library...' : null;
+  $: overlayCountText = fetchLoading ? 'Fetching metadata and cover URLs' : null;
 
 
 </script>
@@ -79,10 +115,12 @@
 <section class="ps1-3d">
   <div class="viewport" bind:this={viewportEl}>
     <PS1LoadingOverlay
-      active={loadingActive}
-      progress={loadingProgress}
-      loaded={loadingLoaded}
-      total={loadingTotal}
+      active={overlayActive}
+      progress={overlayProgress}
+      loaded={overlayLoaded}
+      total={overlayTotal}
+      statusText={overlayStatusText}
+      countText={overlayCountText}
     />
     <button class="fullscreen-toggle" type="button" on:click={toggleFullscreen}>
       {isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}

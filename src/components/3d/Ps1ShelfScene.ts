@@ -7,6 +7,7 @@ import gameBoyColorUrl from '../../assets/game_boy_color.glb?url';
 import nokiaUrl from '../../assets/nokia_6230.glb?url';
 import discmanUrl from '../../assets/sony_discman_d-181.glb?url';
 import tamagotchiURl from '../../assets/tamagotchi.glb?url';
+import backgroundUrl from '../../assets/background.jpg?url';
 
 export type ShelfGame = {
   id: string;
@@ -168,7 +169,7 @@ export class Ps1ShelfScene {
 
   private async loadBackground() {
     try {
-      const texture = await this.trackAssetLoad(loadTexture('/src/assets/background.jpg'));
+      const texture = await this.trackAssetLoad(loadTexture(backgroundUrl));
       if (this.isDestroyed) {
         texture.dispose();
         return;

@@ -134,6 +134,9 @@
       <div class="h-8"></div>
     </div>
   {/if}
+  {#if filteredTracks.length === 0 && !loading && !errorMsg}
+    <p class="mt-4">No tracks inputted for this record at the moment, I am currently working on adding all records before adding tracks. To see an example of a completed record page, check out <a href="/record/JME056" class="text-blue-500 hover:underline">Grime MC by JME.</a>.</p>
+  {/if}
 </section>
 
 

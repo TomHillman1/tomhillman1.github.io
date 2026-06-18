@@ -6,6 +6,8 @@
   export let progress = 0;
   export let loaded = 0;
   export let total = 0;
+  export let statusText: string | null = null;
+  export let countText: string | null = null;
 
   let overlayVisible = active;
   let fadingOut = false;
@@ -127,7 +129,9 @@
     <div class="loading-hud">
       <div class="loading-meta">
         <span class="loading-label">
-          {#if active}
+          {#if statusText}
+            {statusText}
+          {:else if active}
             Reading memory card...
           {:else if videoEnded}
             Boot complete...
@@ -142,7 +146,13 @@
           <div class="loading-bar-fill" style={`width: ${loadPercent}%`}></div>
         </div>
       </div>
-      <div class="loading-count">{loaded}/{Math.max(total, 1)} assets</div>
+      <div class="loading-count">
+        {#if countText}
+          {countText}
+        {:else}
+          {loaded}/{Math.max(total, 1)} assets
+        {/if}
+      </div>
     </div>
   </div>
 {/if}
