@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Volume2, VolumeX } from '@lucide/svelte';
   import ps1LoadStillUrl from '../assets/ps1loadstill.jpg?url';
   import ps1LoadVideoUrl from '../assets/ps1loadscreen.mp4?url';
 
@@ -20,11 +21,13 @@
   let assetsReady = !active;
   let canSkipIntro = assetsReady && !videoEnded;
 
-  async function enableAudio() {
+  async function toggleAudio() {
     if (!videoEl) return;
 
-    audioEnabled = true;
-    videoEl.muted = false;
+    audioEnabled = !audioEnabled;
+    videoEl.muted = !audioEnabled;
+
+    if (!audioEnabled) return;
 
     try {
       await videoEl.play();
@@ -113,11 +116,19 @@
         <img alt="PlayStation startup still" class="still-image" src={ps1LoadStillUrl} />
       </div>
 
-      {#if !audioEnabled}
-        <button class="audio-toggle" type="button" on:click={enableAudio}>
-          Enable audio
-        </button>
-      {/if}
+      <button
+        aria-label={audioEnabled ? 'Mute intro audio' : 'Unmute intro audio'}
+        class="audio-toggle"
+        title={audioEnabled ? 'Mute intro audio' : 'Unmute intro audio'}
+        type="button"
+        on:click={toggleAudio}
+      >
+        {#if audioEnabled}
+          <Volume2 size={18} />
+        {:else}
+          <VolumeX size={18} />
+        {/if}
+      </button>
 
       {#if canSkipIntro}
         <button class="skip-toggle" type="button" on:click={requestSkip}>
@@ -221,14 +232,14 @@
     position: absolute;
     top: 1rem;
     left: 1rem;
+    display: grid;
+    width: 2.4rem;
+    height: 2.4rem;
+    place-items: center;
     border: 1px solid rgba(255, 255, 255, 0.24);
     background: rgba(0, 0, 0, 0.66);
     color: #f8f8f8;
     border-radius: 999px;
-    padding: 0.6rem 0.95rem;
-    font-size: 0.72rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
     cursor: pointer;
     backdrop-filter: blur(12px);
   }

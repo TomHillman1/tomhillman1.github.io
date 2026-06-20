@@ -8,6 +8,9 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: true, autoRefreshToken: true }
 })
 
+const normalizeStoragePath = (path: string) =>
+  path.replace(/^\/+/, '').replace(/\/{2,}/g, '/').trim()
+
 const ensureSession = async (timeoutMs = 2000) => {
   const { data: { session: s0 } } = await supabase.auth.getSession()
   if (s0) return s0
@@ -48,9 +51,40 @@ export const getSignedURL = async (path?: string | null) => {
 
   if (!session) return null // couldn’t get a session
 
-  const key = path.replace(/^\/+/, '').replace(/\/{2,}/g, '/').trim()
+  const key = normalizeStoragePath(path)
   const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(key, 3600)
   if (error) { console.error('createSignedUrl error:', error); return null }
+  return data.signedUrl
+}
+
+export const getTagSongSignedURL = async (gameId?: string | null) => {
+  const normalizedGameId = gameId?.trim()
+  if (!normalizedGameId) return null
+
+  const session = await ensureSession()
+  if (!session) return null
+
+  const folder = normalizeStoragePath(`TagSongs/${normalizedGameId}`)
+  const { data: files, error: listError } = await supabase.storage.from(BUCKET).list(folder, {
+    limit: 20,
+    sortBy: { column: 'name', order: 'asc' }
+  })
+  if (listError) {
+    console.error('list TagSongs error:', listError)
+    return null
+  }
+
+  const song = (files ?? []).find(file => /\.mp3$/i.test(file.name))
+  if (!song) return null
+
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrl(`${folder}/${song.name}`, 3600)
+  if (error) {
+    console.error('createSignedUrl TagSong error:', error)
+    return null
+  }
+
   return data.signedUrl
 }
 

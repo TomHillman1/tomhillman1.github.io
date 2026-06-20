@@ -20,6 +20,8 @@ export type ShelfGame = {
 export type ShelfView = 'front' | 'spine' | 'back';
 export type ShelfSelectionChangeDetail = { game: ShelfGame | null };
 export const PS1_SELECTION_CHANGE_EVENT = 'ps1-selection-change';
+export type ShelfGamePressDetail = { game: ShelfGame };
+export const PS1_GAME_PRESS_EVENT = 'ps1-game-press';
 export type ShelfLoadingProgressDetail = {
   active: boolean;
   loaded: number;
@@ -874,6 +876,9 @@ export class Ps1ShelfScene {
       .map((intersection) => this.getCaseIndexFromObject(intersection.object))
       .find((index): index is number => index !== null);
 
+    if (hit !== undefined && hit !== null) {
+      this.dispatchGamePress(hit);
+    }
     this.setSelectedIndex(hit ?? null);
   }
 
@@ -895,6 +900,15 @@ export class Ps1ShelfScene {
   private dispatchSelectionChange() {
     const game = this.selectedIndex === null ? null : this.shelfGames[this.selectedIndex] ?? null;
     this.container.dispatchEvent(new CustomEvent<ShelfSelectionChangeDetail>(PS1_SELECTION_CHANGE_EVENT, {
+      detail: { game }
+    }));
+  }
+
+  private dispatchGamePress(index: number) {
+    const game = this.shelfGames[index];
+    if (!game) return;
+
+    this.container.dispatchEvent(new CustomEvent<ShelfGamePressDetail>(PS1_GAME_PRESS_EVENT, {
       detail: { game }
     }));
   }
