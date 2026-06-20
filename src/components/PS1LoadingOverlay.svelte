@@ -242,6 +242,7 @@
     border-radius: 999px;
     cursor: pointer;
     backdrop-filter: blur(12px);
+    justify-content: center;
   }
 
   .skip-toggle {

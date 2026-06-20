@@ -368,6 +368,7 @@
     background: rgba(255, 255, 255, 0.08);
     color: inherit;
     cursor: pointer;
+    justify-content: center;
   }
   .music-button:disabled {
     cursor: not-allowed;
