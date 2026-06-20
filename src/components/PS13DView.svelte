@@ -369,6 +369,7 @@
     color: inherit;
     cursor: pointer;
     justify-content: center;
+    align-content: center;
   }
   .music-button:disabled {
     cursor: not-allowed;

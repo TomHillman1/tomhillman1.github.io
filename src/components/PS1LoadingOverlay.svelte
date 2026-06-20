@@ -243,6 +243,7 @@
     cursor: pointer;
     backdrop-filter: blur(12px);
     justify-content: center;
+    align-content: center;
   }
 
   .skip-toggle {
