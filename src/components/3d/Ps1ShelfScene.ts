@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { GameCase } from './GameCase';
 import { loadTexture } from './materials';
+import { Ps1PostProcessing } from './Ps1PostProcessing';
 import bookshelfUrl from '../../assets/bookshelf.glb?url';
 import gameBoyColorUrl from '../../assets/game_boy_color.glb?url';
 import nokiaUrl from '../../assets/nokia_6230.glb?url';
@@ -58,6 +59,7 @@ export class Ps1ShelfScene {
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
   private renderer: THREE.WebGLRenderer;
+  private postProcessing: Ps1PostProcessing;
   private raycaster = new THREE.Raycaster();
   private pointer = new THREE.Vector2();
   private cameraTarget = new THREE.Vector3(0, 0.6, 0);
@@ -137,11 +139,19 @@ export class Ps1ShelfScene {
     this.camera.lookAt(this.cameraTarget);
 
     // WebGL renderer bound to the provided DOM container.
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer = new THREE.WebGLRenderer({ antialias: false });
     this.renderer.setSize(clientWidth, clientHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.container.appendChild(this.renderer.domElement);
+    this.postProcessing = new Ps1PostProcessing(this.renderer, this.scene, this.camera, {
+      pixelSize: 1,
+      colorLevels: 24,
+      ditherStrength: 0.65,
+      scanlineStrength: 0.06,
+      jitterStrength: 0.2,
+      vignetteStrength: 0.12
+    });
 
     // Basic lighting so the shelf has visible shading.
     const ambient = new THREE.AmbientLight(0xffffff, 0.7);
@@ -781,7 +791,7 @@ export class Ps1ShelfScene {
       this.updateViewAnimation();
       this.updateSelectionAnimation(deltaSeconds);
       this.updateCameraFocus(deltaSeconds);
-      this.renderer.render(this.scene, this.camera);
+      this.postProcessing.render(deltaSeconds, now / 1000);
     };
     animate();
   }
@@ -930,6 +940,7 @@ export class Ps1ShelfScene {
     this.camera.updateProjectionMatrix();
     this.updateFreeCameraFrame();
     this.renderer.setSize(clientWidth, clientHeight);
+    this.postProcessing.setSize(clientWidth, clientHeight, this.renderer.getPixelRatio());
   }
 
   destroy() {
@@ -946,6 +957,7 @@ export class Ps1ShelfScene {
     this.clearCases();
     this.backgroundTexture?.dispose();
     this.backgroundTexture = null;
+    this.postProcessing.dispose();
     this.renderer.dispose();
     this.container.removeChild(this.renderer.domElement);
   }
