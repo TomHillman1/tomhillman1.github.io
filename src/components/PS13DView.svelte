@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { LoaderCircle, Pause, Play, Volume2, VolumeX } from '@lucide/svelte';
   import { getTagSongSignedURL } from '../helpers/api';
+  import AudioControl from './AudioControl.svelte';
   import PS1LoadingOverlay from './PS1LoadingOverlay.svelte';
   import {
     PS1_GAME_PRESS_EVENT,
@@ -102,9 +102,8 @@
     musicMuted = !musicMuted;
   }
 
-  function handleVolumeInput(event: Event) {
-    const input = event.currentTarget as HTMLInputElement;
-    musicVolume = Number(input.value);
+  function handleMusicVolumeChange(event: CustomEvent<{ volume: number }>) {
+    musicVolume = event.detail.volume;
     if (musicVolume > 0 && musicMuted) {
       musicMuted = false;
     }
@@ -246,49 +245,23 @@
     <button class="fullscreen-toggle" type="button" on:click={toggleFullscreen}>
       {isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
     </button>
-    <div class="music-controls">
-      <button
-        aria-label={musicPlaying ? 'Pause tag song' : 'Play tag song'}
-        class="music-button"
-        disabled={!canUseMusicControls}
-        title={musicPlaybackError || (musicPlaying ? 'Pause tag song' : 'Play tag song')}
-        type="button"
-        on:click={toggleMusicPlayback}
-      >
-        {#if musicLoading}
-          <span class="spin">
-            <LoaderCircle size={17} />
-          </span>
-        {:else if musicPlaying}
-          <Pause size={17} />
-        {:else}
-          <Play size={17} />
-        {/if}
-      </button>
-      <button
-        aria-label={musicAudible ? 'Mute tag song' : 'Unmute tag song'}
-        class="music-button"
-        title={musicAudible ? 'Mute tag song' : 'Unmute tag song'}
-        type="button"
-        on:click={toggleMusicMute}
-      >
-        {#if musicAudible}
-          <Volume2 size={17} />
-        {:else}
-          <VolumeX size={17} />
-        {/if}
-      </button>
-      <input
-        aria-label="Tag song volume"
-        class="volume-slider"
-        max="1"
-        min="0"
-        step="0.01"
-        type="range"
-        value={musicVolume}
-        on:input={handleVolumeInput}
-      />
-    </div>
+    <AudioControl
+      disabled={!canUseMusicControls}
+      loading={musicLoading}
+      muted={!musicAudible}
+      pauseLabel="Pause tag song"
+      playbackError={musicPlaybackError}
+      placement="bottom-left"
+      playing={musicPlaying}
+      playLabel="Play tag song"
+      muteLabel="Mute tag song"
+      unmuteLabel="Unmute tag song"
+      volume={musicVolume}
+      volumeLabel="Tag song volume"
+      on:toggleplayback={toggleMusicPlayback}
+      on:togglemute={toggleMusicMute}
+      on:volumechange={handleMusicVolumeChange}
+    />
     {#if selectedGame}
       <div class="selection-overlay">
         Game selected: {selectedGame.name}
@@ -343,53 +316,6 @@
     cursor: pointer;
     backdrop-filter: blur(12px);
   }
-  .music-controls {
-    position: absolute;
-    left: 1rem;
-    bottom: 1rem;
-    z-index: 2;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.45rem 0.6rem;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 999px;
-    background: rgba(0, 0, 0, 0.7);
-    color: #fff;
-    backdrop-filter: blur(12px);
-  }
-  .music-button {
-    display: grid;
-    width: 2rem;
-    height: 2rem;
-    place-items: center;
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.08);
-    color: inherit;
-    cursor: pointer;
-    justify-content: center;
-    align-content: center;
-  }
-  .music-button:disabled {
-    cursor: not-allowed;
-    opacity: 0.45;
-  }
-  .volume-slider {
-    width: min(8rem, 24vw);
-    accent-color: #46d6cf;
-    cursor: pointer;
-  }
-  .spin {
-    display: grid;
-    place-items: center;
-    animation: spin 0.9s linear infinite;
-  }
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
   .selection-overlay {
     position: absolute;
     top: 1rem;
@@ -406,13 +332,4 @@
     height: 100%;
   }
 
-  @media (max-width: 640px) {
-    .music-controls {
-      right: 1rem;
-    }
-
-    .volume-slider {
-      width: min(7rem, 34vw);
-    }
-  }
 </style>

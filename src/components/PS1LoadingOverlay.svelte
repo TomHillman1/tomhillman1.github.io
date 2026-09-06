@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Volume2, VolumeX } from '@lucide/svelte';
+  import AudioControl from './AudioControl.svelte';
   import ps1LoadStillUrl from '../assets/ps1loadstill.jpg?url';
   import ps1LoadVideoUrl from '../assets/ps1loadscreen.mp4?url';
 
@@ -13,7 +13,12 @@
   let overlayVisible = active;
   let fadingOut = false;
   let videoEnded = false;
-  let audioEnabled = false;
+  let introMuted = true;
+  let introVolume = 0.7;
+  let introPlaying = false;
+  let introLoading = false;
+  let introPlaybackError = '';
+  let introAutoplayPending = true;
   let skipRequested = false;
   let videoEl: HTMLVideoElement | null = null;
   let hideTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -21,25 +26,56 @@
   let assetsReady = !active;
   let canSkipIntro = assetsReady && !videoEnded;
 
-  async function toggleAudio() {
+  function pauseIntro() {
+    videoEl?.pause();
+  }
+
+  async function playIntro() {
     if (!videoEl) return;
 
-    audioEnabled = !audioEnabled;
-    videoEl.muted = !audioEnabled;
+    if (videoEnded) {
+      videoEnded = false;
+      videoEl.currentTime = 0;
+    }
 
-    if (!audioEnabled) return;
+    introLoading = true;
+    introPlaybackError = '';
+    videoEl.muted = introMuted || introVolume <= 0;
+    videoEl.volume = introVolume;
 
     try {
       await videoEl.play();
-    } catch {
-      audioEnabled = false;
+    } catch (err) {
+      introPlaying = false;
+      introPlaybackError = 'Playback blocked. Press play to start intro.';
+      console.warn('Failed to play intro video.', err);
+    } finally {
+      introLoading = false;
+    }
+  }
+
+  async function toggleIntroPlayback() {
+    if (introPlaying) {
+      pauseIntro();
+      return;
+    }
+
+    await playIntro();
+  }
+
+  async function toggleIntroMute() {
+    introMuted = !introMuted;
+
+    if (!introMuted && videoEl?.paused && !videoEnded) {
+      await playIntro();
     }
   }
 
   async function startIntroPlayback() {
     if (!videoEl || videoEnded) return;
 
-    videoEl.muted = !audioEnabled;
+    videoEl.muted = introMuted || introVolume <= 0;
+    videoEl.volume = introVolume;
 
     try {
       await videoEl.play();
@@ -50,6 +86,18 @@
 
   function handleVideoEnded() {
     videoEnded = true;
+    introPlaying = false;
+    introLoading = false;
+  }
+
+  function handleIntroVolumeChange(event: CustomEvent<{ volume: number }>) {
+    introVolume = event.detail.volume;
+    if (introVolume > 0 && introMuted) {
+      introMuted = false;
+      if (videoEl?.paused && !videoEnded) {
+        void playIntro();
+      }
+    }
   }
 
   function requestSkip() {
@@ -60,6 +108,8 @@
   function resetOverlayCycle() {
     skipRequested = false;
     videoEnded = false;
+    introAutoplayPending = true;
+    introPlaybackError = '';
     overlayVisible = true;
     fadingOut = false;
     if (hideTimeout) {
@@ -69,7 +119,6 @@
     if (videoEl) {
       videoEl.pause();
       videoEl.currentTime = 0;
-      void startIntroPlayback();
     }
   }
 
@@ -80,6 +129,10 @@
   $: assetsReady = !active;
   $: loadPercent = Math.max(0, Math.min(100, Math.round(progress * 100)));
   $: canSkipIntro = assetsReady && !videoEnded;
+  $: if (videoEl) {
+    videoEl.volume = introVolume;
+    videoEl.muted = introMuted || introVolume <= 0;
+  }
 
   $: if (!active && overlayVisible && !fadingOut && (videoEnded || skipRequested)) {
     fadingOut = true;
@@ -91,7 +144,8 @@
     }, 420);
   }
 
-  $: if (overlayVisible && videoEl && videoEl.paused && videoEl.currentTime === 0 && !videoEnded) {
+  $: if (overlayVisible && videoEl && introAutoplayPending && !videoEnded) {
+    introAutoplayPending = false;
     void startIntroPlayback();
   }
 </script>
@@ -106,8 +160,21 @@
         poster={ps1LoadStillUrl}
         playsinline
         preload="auto"
-        muted={!audioEnabled}
+        muted={introMuted || introVolume <= 0}
+        on:canplay={() => introLoading = false}
         on:ended={handleVideoEnded}
+        on:error={() => {
+          introPlaying = false;
+          introLoading = false;
+          introPlaybackError = 'Could not play intro audio.';
+        }}
+        on:pause={() => introPlaying = false}
+        on:play={() => introPlaying = true}
+        on:playing={() => {
+          introPlaying = true;
+          introLoading = false;
+        }}
+        on:waiting={() => introLoading = true}
       >
         <source src={ps1LoadVideoUrl} type="video/mp4" />
       </video>
@@ -116,19 +183,23 @@
         <img alt="PlayStation startup still" class="still-image" src={ps1LoadStillUrl} />
       </div>
 
-      <button
-        aria-label={audioEnabled ? 'Mute intro audio' : 'Unmute intro audio'}
-        class="audio-toggle"
-        title={audioEnabled ? 'Mute intro audio' : 'Unmute intro audio'}
-        type="button"
-        on:click={toggleAudio}
-      >
-        {#if audioEnabled}
-          <Volume2 size={18} />
-        {:else}
-          <VolumeX size={18} />
-        {/if}
-      </button>
+      <AudioControl
+        disabled={true}
+        loading={introLoading}
+        muted={introMuted || introVolume <= 0}
+        pauseLabel="Intro playback locked"
+        playbackError={introPlaybackError}
+        placement="bottom-left"
+        playing={introPlaying}
+        playLabel="Intro playback locked"
+        muteLabel="Mute intro audio"
+        unmuteLabel="Unmute intro audio"
+        volume={introVolume}
+        volumeLabel="Intro volume"
+        on:toggleplayback={toggleIntroPlayback}
+        on:togglemute={toggleIntroMute}
+        on:volumechange={handleIntroVolumeChange}
+      />
 
       {#if canSkipIntro}
         <button class="skip-toggle" type="button" on:click={requestSkip}>
@@ -228,24 +299,6 @@
     object-fit: cover;
   }
 
-  .audio-toggle {
-    position: absolute;
-    top: 1rem;
-    left: 1rem;
-    display: grid;
-    width: 2.4rem;
-    height: 2.4rem;
-    place-items: center;
-    border: 1px solid rgba(255, 255, 255, 0.24);
-    background: rgba(0, 0, 0, 0.66);
-    color: #f8f8f8;
-    border-radius: 999px;
-    cursor: pointer;
-    backdrop-filter: blur(12px);
-    justify-content: center;
-    align-content: center;
-  }
-
   .skip-toggle {
     position: absolute;
     top: 1rem;
@@ -320,13 +373,6 @@
   }
 
   @media (max-width: 640px) {
-    .audio-toggle {
-      top: auto;
-      left: 50%;
-      bottom: 5.2rem;
-      transform: translateX(-50%);
-    }
-
     .skip-toggle {
       top: auto;
       right: 50%;
