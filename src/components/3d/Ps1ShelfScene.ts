@@ -13,7 +13,11 @@ import backgroundUrl from '../../assets/background.jpg?url';
 const roomModelUrls = import.meta.glob([
   '../../assets/room/bed.glb',
   '../../assets/room/nightstand.glb',
+  '../../assets/room/baseballhat.glb',
   '../../assets/room/desk.glb',
+  '../../assets/room/computer.glb',
+  '../../assets/room/deskfan.glb',
+  '../../assets/room/trashcan.glb',
   '../../assets/room/chair.glb',
   '../../assets/room/crt_tv.glb',
   '../../assets/room/psone.glb',
@@ -74,7 +78,9 @@ type RoomPropConfig = {
   position: THREE.Vector3;
   targetSize: THREE.Vector3;
   scaleMode?: 'fit' | 'height';
+  rotationX?: number;
   rotationY?: number;
+  rotationZ?: number;
   alignToFloor?: boolean;
 };
 
@@ -368,7 +374,7 @@ export class Ps1ShelfScene {
 
   private createCeilingLight(group: THREE.Group, room: ReturnType<Ps1ShelfScene['getRoomMetrics']>) {
     const lightX = room.shelfCenter.x;
-    const lightZ = room.rearZ + room.depth * 0.48;
+    const lightZ = room.rearZ + room.depth * 0.48 + 0.7;
     const fixtureMaterial = new THREE.MeshStandardMaterial({
       color: 0xfff2d8,
       emissive: 0xffdfa0,
@@ -414,13 +420,7 @@ export class Ps1ShelfScene {
   }
 
   private createBuiltInRoomFurniture(group: THREE.Group, room: ReturnType<Ps1ShelfScene['getRoomMetrics']>) {
-    const shelfLeft = room.shelfCenter.x - room.shelfSize.x / 2;
-    const bedWidth = 2.7;
-    const bedX = THREE.MathUtils.clamp(
-      shelfLeft - 1.75,
-      room.leftX + bedWidth / 2 + 0.35,
-      shelfLeft - bedWidth / 2 - 0.35
-    );
+    const stand = this.getTvStandMetrics(room);
     const rugMaterial = new THREE.MeshStandardMaterial({
       color: 0x66798a,
       roughness: 0.95
@@ -429,7 +429,7 @@ export class Ps1ShelfScene {
     const rug = new THREE.Mesh(new THREE.PlaneGeometry(3.1, 1.9), rugMaterial);
     rug.name = 'small-bedroom-rug';
     rug.rotation.x = -Math.PI / 2;
-    rug.position.set(bedX, 0.018, room.rearZ + room.depth * 0.5);
+    rug.position.set(stand.centerX, 0.018, room.rearZ + room.depth * 0.54 + 1);
     rug.receiveShadow = true;
     group.add(rug);
 
@@ -437,16 +437,16 @@ export class Ps1ShelfScene {
   }
 
   private getTvStandMetrics(room: ReturnType<Ps1ShelfScene['getRoomMetrics']>) {
-    const width = 2.8;
-    const depth = 1.65;
-    const height = this.targetShelfHeight;
+    const width = 1.85;
+    const depth = 1.25;
+    const height = this.targetShelfHeight - 1;
     const boardThickness = 0.08;
     return {
       width,
       depth,
       height,
       boardThickness,
-      centerX: room.shelfCenter.x + room.shelfSize.x / 2 + 0.25 + width / 2,
+      centerX: room.shelfCenter.x + room.shelfSize.x / 2 + 0.15 + width / 2,
       centerZ: room.rearZ + 0.12 + depth / 2,
       consoleShelfY: height * 0.55
     };
@@ -593,26 +593,82 @@ export class Ps1ShelfScene {
   ) {
     const props = this.getRoomPropConfigs(room);
     await Promise.all(props.map(async (config) => {
-      const url = this.getRoomModelUrl(config.filename);
-      if (!url) {
-        console.warn(`Room model not found: src/assets/room/${config.filename}`);
-        return;
-      }
-
-      try {
-        const gltf = await this.trackAssetLoad(Ps1ShelfScene.gltfLoader.loadAsync(url));
-        if (this.isDestroyed || loadVersion !== this.roomLoadVersion || group !== this.roomGroup) {
-          this.disposeObjectResources(gltf.scene);
-          return;
-        }
-
-        const object = this.normalizeRoomProp(gltf.scene, config);
-        object.name = config.label;
-        group.add(object);
-      } catch (err) {
-        console.warn(`Failed to load room model: ${config.filename}`, err);
+      const object = await this.loadRoomProp(config, loadVersion, group);
+      if (object && config.label === 'desk') {
+        await Promise.all(this.getDeskPropConfigs(object).map((deskProp) =>
+          this.loadRoomProp(deskProp, loadVersion, group)
+        ));
+      } else if (object && config.label === 'nightstand') {
+        await this.loadRoomProp(this.getNightstandHatConfig(object), loadVersion, group);
       }
     }));
+  }
+
+  private async loadRoomProp(config: RoomPropConfig, loadVersion: number, group: THREE.Group) {
+    const url = this.getRoomModelUrl(config.filename);
+    if (!url) {
+      console.warn(`Room model not found: src/assets/room/${config.filename}`);
+      return null;
+    }
+
+    try {
+      const gltf = await this.trackAssetLoad(Ps1ShelfScene.gltfLoader.loadAsync(url));
+      if (this.isDestroyed || loadVersion !== this.roomLoadVersion || group !== this.roomGroup) {
+        this.disposeObjectResources(gltf.scene);
+        return null;
+      }
+
+      const object = this.normalizeRoomProp(gltf.scene, config);
+      object.name = config.label;
+      group.add(object);
+      return object;
+    } catch (err) {
+      console.warn(`Failed to load room model: ${config.filename}`, err);
+      return null;
+    }
+  }
+
+  private getNightstandHatConfig(nightstand: THREE.Object3D): RoomPropConfig {
+    const bounds = new THREE.Box3().setFromObject(nightstand);
+    const size = bounds.getSize(new THREE.Vector3());
+    const center = bounds.getCenter(new THREE.Vector3());
+    return {
+      filename: 'baseballhat.glb',
+      label: 'nightstand-baseball-hat',
+      position: new THREE.Vector3(center.x, bounds.max.y - 0.175, center.z),
+      targetSize: new THREE.Vector3(size.x * 0.8, 0.3, size.z * 0.8).multiplyScalar(1.5),
+      rotationX: -Math.PI / 4,
+      rotationY: -Math.PI / 10
+    };
+  }
+
+  private getDeskPropConfigs(desk: THREE.Object3D): RoomPropConfig[] {
+    // Use the fitted desk's actual top, since its target height is only a size limit.
+    const bounds = new THREE.Box3().setFromObject(desk);
+    const size = bounds.getSize(new THREE.Vector3());
+    const center = bounds.getCenter(new THREE.Vector3());
+    return [
+      {
+        filename: 'computer.glb',
+        label: 'desk-computer',
+        position: new THREE.Vector3(center.x + 0.3, bounds.max.y, center.z - size.z * 0.18),
+        targetSize: new THREE.Vector3(size.x - 0.16, 1.15, size.z * 0.58),
+      },
+      {
+        filename: 'deskfan.glb',
+        label: 'desk-fan',
+        position: new THREE.Vector3(center.x, bounds.max.y, center.z + size.z * 0.32),
+        targetSize: new THREE.Vector3(size.x - 0.2, 0.9, size.z * 0.24),
+        rotationY: -Math.PI / 2
+      },
+      {
+        filename: 'trashcan.glb',
+        label: 'desk-trashcan',
+        position: new THREE.Vector3(center.x, 0, bounds.max.z + 0.45),
+        targetSize: new THREE.Vector3(0.65, 0.85, 0.65),
+        rotationY: 0
+      }
+    ];
   }
 
   private getRoomModelUrl(filename: string) {
@@ -620,16 +676,11 @@ export class Ps1ShelfScene {
   }
 
   private getRoomPropConfigs(room: ReturnType<Ps1ShelfScene['getRoomMetrics']>): RoomPropConfig[] {
-    const shelfLeft = room.shelfCenter.x - room.shelfSize.x / 2;
     const stand = this.getTvStandMetrics(room);
     const furnitureReferenceHeight = 1.43;
     const deskWidth = 2.75;
     const bedWidth = 2.7;
-    const bedX = THREE.MathUtils.clamp(
-      shelfLeft - 1.75,
-      room.leftX + bedWidth / 2 + 0.35,
-      shelfLeft - bedWidth / 2 - 0.35
-    );
+    const bedX = room.leftX + bedWidth / 2 + 0.08;
     const deskDepth = 1.35;
     const deskX = room.rightX - deskDepth / 2 - 0.25;
     const bedZ = room.rearZ + 2.08;
@@ -646,29 +697,28 @@ export class Ps1ShelfScene {
       {
         filename: 'nightstand.glb',
         label: 'nightstand',
-        position: new THREE.Vector3(bedX - bedWidth / 2 - 0.55, 0, bedZ - 1.15),
+        position: new THREE.Vector3(bedX + bedWidth / 2 + 0.55, 0, bedZ - 1.15),
         targetSize: new THREE.Vector3(0.82, 0.86, 0.82),
-        rotationY: Math.PI / 2
       },
       {
         filename: 'desk.glb',
         label: 'desk',
         position: new THREE.Vector3(deskX, 0, deskZ),
         targetSize: new THREE.Vector3(deskDepth, furnitureReferenceHeight * 1.16, deskWidth),
-        rotationY: Math.PI / 2
+        rotationY: -Math.PI / 2
       },
       {
         filename: 'chair.glb',
         label: 'desk-chair',
-        position: new THREE.Vector3(deskX - 1.15, 0, deskZ),
+        position: new THREE.Vector3(deskX -0.5, 0, deskZ -0.5),
         targetSize: new THREE.Vector3(1.2, furnitureReferenceHeight * 1.2, 1.2),
-        rotationY: -Math.PI / 2
+        rotationY: Math.PI / 2
       },
       {
         filename: 'crt_tv.glb',
         label: 'crt-tv',
         position: new THREE.Vector3(stand.centerX, stand.height, stand.centerZ),
-        targetSize: new THREE.Vector3(stand.width - 0.2, 1.5, stand.depth - 0.2),
+        targetSize: new THREE.Vector3(stand.width - 0.2, 1.5, stand.depth - 0.2).multiplyScalar(0.75),
         rotationY: Math.PI
       },
       {
@@ -682,15 +732,15 @@ export class Ps1ShelfScene {
       {
         filename: 'floor_lamp.glb',
         label: 'floor-lamp',
-        position: new THREE.Vector3(room.rightX - 0.55, 0, room.rearZ + 0.75),
-        targetSize: new THREE.Vector3(0.62, 2.4, 0.62),
+        position: new THREE.Vector3(room.rightX - 0.8, 0, room.rearZ + 0.75),
+        targetSize: new THREE.Vector3(0.62, 2.4, 0.62).multiplyScalar(2.25),
         rotationY: -Math.PI / 4
       },
       {
         filename: 'beanbag.glb',
         label: 'beanbag',
-        position: new THREE.Vector3(room.centerX - 2.6, 0, room.rearZ + room.depth * 0.54),
-        targetSize: new THREE.Vector3(1.25, 0.7, 1.25),
+        position: new THREE.Vector3(stand.centerX, 0, room.rearZ + room.depth * 0.54 + 1),
+        targetSize: new THREE.Vector3(1.25, 0.7, 1.25).multiplyScalar(2),
         rotationY: -Math.PI / 6
       }
     ];
@@ -698,7 +748,13 @@ export class Ps1ShelfScene {
 
   private normalizeRoomProp(rawObject: THREE.Object3D, config: RoomPropConfig) {
     this.applyObjectShadows(rawObject);
-    rawObject.rotation.y = config.rotationY ?? 0;
+    // Apply pitch/roll before yaw, then measure the rotated model for fitting and grounding.
+    rawObject.rotation.set(
+      config.rotationX ?? rawObject.rotation.x,
+      config.rotationY ?? 0,
+      config.rotationZ ?? rawObject.rotation.z,
+      'YXZ'
+    );
     rawObject.updateMatrixWorld(true);
 
     const rawBounds = new THREE.Box3().setFromObject(rawObject);
