@@ -10,6 +10,21 @@ import discmanUrl from '../../assets/sony_discman_d-181.glb?url';
 import tamagotchiURl from '../../assets/tamagotchi.glb?url';
 import backgroundUrl from '../../assets/background.jpg?url';
 
+const roomModelUrls = import.meta.glob([
+  '../../assets/room/bed.glb',
+  '../../assets/room/nightstand.glb',
+  '../../assets/room/desk.glb',
+  '../../assets/room/chair.glb',
+  '../../assets/room/crt_tv.glb',
+  '../../assets/room/psone.glb',
+  '../../assets/room/floor_lamp.glb',
+  '../../assets/room/beanbag.glb'
+], {
+  eager: true,
+  query: '?url',
+  import: 'default'
+}) as Record<string, string>;
+
 export type ShelfGame = {
   id: string;
   name: string;
@@ -53,6 +68,16 @@ type RowLayout = {
   spacing: number;
 };
 
+type RoomPropConfig = {
+  filename: string;
+  label: string;
+  position: THREE.Vector3;
+  targetSize: THREE.Vector3;
+  scaleMode?: 'fit' | 'height';
+  rotationY?: number;
+  alignToFloor?: boolean;
+};
+
 export class Ps1ShelfScene {
   private static readonly gltfLoader = new GLTFLoader();
 
@@ -70,6 +95,7 @@ export class Ps1ShelfScene {
   private frameId: number | null = null;
   private lastFrameTime = performance.now();
   private backgroundTexture: THREE.Texture | null = null;
+  private roomGroup: THREE.Group | null = null;
   private shelfObject: THREE.Object3D | null = null;
   private shelfPropObjects: THREE.Object3D[] = [];
   private shelfBounds: THREE.Box3 | null = null;
@@ -89,6 +115,7 @@ export class Ps1ShelfScene {
     to: CaseTransform[];
   } | null = null;
   private shelfLoadVersion = 0;
+  private roomLoadVersion = 0;
   private shelfGameCount = -1;
   private isDestroyed = false;
   private trackedPendingLoads = 0;
@@ -99,24 +126,30 @@ export class Ps1ShelfScene {
   private readonly cameraMoveSpeed = 2.4;
   private readonly cameraZoomSpeed = 0.01;
   private readonly cameraMinDistance = 1.5;
-  private readonly cameraMaxDistance = 24;
-  private readonly selectedCameraYOffset = 0.1;
-  private readonly selectedCameraDefaultDistance = 2.1;
-  private readonly selectedCameraMinDistance = 1.2;
+  private readonly cameraMaxDistance = 32;
+  private get selectedCameraYOffset() { return 0.1 * this.shelfContentScale; }
+  private get selectedCameraDefaultDistance() { return 2.1 * this.shelfContentScale; }
+  private get selectedCameraMinDistance() { return 1.2 * this.shelfContentScale; }
   private readonly selectedCameraMaxDistance = 10;
   private selectedCameraDistance = 2.1;
-  private readonly showShelfDebug = import.meta.env.DEV;
-  private readonly targetShelfWidth = 3.8;
-  private readonly caseWidth = 1.31;
-  private readonly caseHeight = 1.43;
-  private readonly caseDepth = 0.2;
-  private readonly selectionOffsetZ = 1.2;
+  private readonly showShelfDebug = false;
+  private readonly roomDepth = 9.5;
+  private readonly roomMinWidth = 11;
+  // Treat the wall as eight feet high, with a three-foot game shelf.
+  private readonly roomHeight = 6.5;
+  private readonly targetShelfHeight = this.roomHeight * 3 / 8;
+  private readonly referenceShelfWidth = 2.53;
+  private shelfContentScale = 1;
+  private get caseWidth() { return 0.87 * this.shelfContentScale; }
+  private get caseHeight() { return 0.94 * this.shelfContentScale; }
+  private get caseDepth() { return 0.13 * this.shelfContentScale; }
+  private get selectionOffsetZ() { return 0.8 * this.shelfContentScale; }
   private readonly selectionProgressDamping = 10;
   private readonly selectionSpinSpeed = Math.PI * 0.5;
-  private readonly shelfCaseXPadding = 0.03;
-  private readonly shelfCaseBottomPadding = 0.005;
-  private readonly shelfCaseZPadding = 0.04;
-  private readonly shelfPropGap = 0.08;
+  private get shelfCaseXPadding() { return 0.03 * this.shelfContentScale; }
+  private get shelfCaseBottomPadding() { return 0.005 * this.shelfContentScale; }
+  private get shelfCaseZPadding() { return 0.04 * this.shelfContentScale; }
+  private get shelfPropGap() { return 0.08 * this.shelfContentScale; }
   private readonly shelfPropRowIndex = 1;
   private readonly shelfRowSpecs: ShelfRowSpec[] = [
     { minX: 0.04, maxX: 0.96, minY: 0.76, maxY: 0.985, minZ: 0.16, maxZ: 0.82 },
@@ -128,9 +161,9 @@ export class Ps1ShelfScene {
   constructor(private container: HTMLElement, games: ShelfGame[] = []) {
     const { clientWidth, clientHeight } = this.container;
 
-    // Core scene container and neutral background.
+    // Core scene container and dark fallback background.
     this.scene = new THREE.Scene();
-    this.scene.backgroundBlurriness = 0.9;
+    this.scene.background = new THREE.Color(0x080604);
     void this.loadBackground();
 
     // Camera framing: slightly above and in front of the shelf.
@@ -143,6 +176,8 @@ export class Ps1ShelfScene {
     this.renderer.setSize(clientWidth, clientHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.container.appendChild(this.renderer.domElement);
     this.postProcessing = new Ps1PostProcessing(this.renderer, this.scene, this.camera, {
       pixelSize: 1,
@@ -153,11 +188,7 @@ export class Ps1ShelfScene {
       vignetteStrength: 0.12
     });
 
-    // Basic lighting so the shelf has visible shading.
-    const ambient = new THREE.AmbientLight(0xffffff, 0.7);
-    const keyLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    keyLight.position.set(2, 4, 3);
-    this.scene.add(ambient, keyLight);
+    this.addRoomLighting();
 
     // Add the shelf model, falling back to a basic box if loading fails.
     this.createShelf(games.length);
@@ -189,10 +220,520 @@ export class Ps1ShelfScene {
 
       this.backgroundTexture?.dispose();
       this.backgroundTexture = texture;
-      this.scene.background = texture;
+      this.rebuildRoom();
     } catch (err) {
       console.warn('Failed to load scene background texture.', err);
     }
+  }
+
+  private addRoomLighting() {
+    const ambient = new THREE.AmbientLight(0xfff6e6, 0.62);
+    const hemisphere = new THREE.HemisphereLight(0xfff2d5, 0x7a6348, 0.85);
+    const frontFill = new THREE.DirectionalLight(0xfff0d0, 0.45);
+    frontFill.position.set(0, 2.4, 6);
+    this.scene.add(ambient, hemisphere, frontFill);
+  }
+
+  private rebuildRoom() {
+    this.clearRoom();
+    if (!this.shelfBounds) return;
+
+    const loadVersion = ++this.roomLoadVersion;
+    const group = new THREE.Group();
+    group.name = 'ps1-bedroom-room';
+
+    const room = this.getRoomMetrics();
+    this.createRoomShell(group, room);
+    this.createCeilingLight(group, room);
+    this.createBuiltInRoomFurniture(group, room);
+
+    this.scene.add(group);
+    this.roomGroup = group;
+    void this.loadRoomProps(loadVersion, group, room);
+  }
+
+  private getRoomMetrics() {
+    const bounds = this.shelfBounds!;
+    const shelfSize = bounds.getSize(new THREE.Vector3());
+    const shelfCenter = bounds.getCenter(new THREE.Vector3());
+    const width = Math.max(this.roomMinWidth, shelfSize.x * 3.5);
+    const height = this.roomHeight;
+    const rearZ = bounds.min.z - 0.08;
+    const depth = Math.max(this.roomDepth, this.freeCameraPosition.z - rearZ + 2.5);
+    const centerX = shelfCenter.x;
+    const centerZ = rearZ + depth / 2;
+
+    return {
+      width,
+      height,
+      depth,
+      centerX,
+      centerZ,
+      rearZ,
+      frontZ: rearZ + depth,
+      leftX: centerX - width / 2,
+      rightX: centerX + width / 2,
+      shelfCenter,
+      shelfSize
+    };
+  }
+
+  private createRoomShell(group: THREE.Group, room: ReturnType<Ps1ShelfScene['getRoomMetrics']>) {
+    const wallMaterial = this.createWallpaperMaterial(room.width / 2.4, room.height / 1.8);
+    const leftWallMaterial = this.createWallpaperMaterial(room.depth / 2.4, room.height / 1.8);
+    const rightWallMaterial = this.createWallpaperMaterial(room.depth / 2.4, room.height / 1.8);
+    const carpetMaterial = this.createCarpetMaterial();
+    const ceilingMaterial = this.createPopcornCeilingMaterial();
+    const baseboardMaterial = new THREE.MeshStandardMaterial({
+      color: 0xa87445,
+      roughness: 0.82,
+      metalness: 0.02
+    });
+
+    const backWall = new THREE.Mesh(new THREE.PlaneGeometry(room.width, room.height), wallMaterial);
+    backWall.name = 'wallpaper-back-wall';
+    backWall.position.set(room.centerX, room.height / 2, room.rearZ);
+    backWall.receiveShadow = true;
+    group.add(backWall);
+
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(room.width, room.depth), carpetMaterial);
+    floor.name = 'low-pile-carpet';
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set(room.centerX, -0.015, room.centerZ);
+    floor.receiveShadow = true;
+    group.add(floor);
+
+    const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(room.width, room.depth), ceilingMaterial);
+    ceiling.name = 'popcorn-ceiling';
+    ceiling.rotation.x = Math.PI / 2;
+    ceiling.position.set(room.centerX, room.height + 0.015, room.centerZ);
+    ceiling.receiveShadow = true;
+    group.add(ceiling);
+
+    const leftWall = new THREE.Mesh(new THREE.PlaneGeometry(room.depth, room.height), leftWallMaterial);
+    leftWall.name = 'left-wall';
+    leftWall.rotation.y = Math.PI / 2;
+    leftWall.position.set(room.leftX, room.height / 2, room.centerZ);
+    leftWall.receiveShadow = true;
+    group.add(leftWall);
+
+    const rightWall = new THREE.Mesh(new THREE.PlaneGeometry(room.depth, room.height), rightWallMaterial);
+    rightWall.name = 'right-wall';
+    rightWall.rotation.y = -Math.PI / 2;
+    rightWall.position.set(room.rightX, room.height / 2, room.centerZ);
+    rightWall.receiveShadow = true;
+    group.add(rightWall);
+
+    const backBaseboard = new THREE.Mesh(new THREE.BoxGeometry(room.width, 0.08, 0.05), baseboardMaterial);
+    backBaseboard.position.set(room.centerX, 0.04, room.rearZ + 0.03);
+    backBaseboard.castShadow = true;
+    backBaseboard.receiveShadow = true;
+    group.add(backBaseboard);
+
+    const leftBaseboard = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, room.depth), baseboardMaterial.clone());
+    leftBaseboard.position.set(room.leftX + 0.03, 0.04, room.centerZ);
+    leftBaseboard.castShadow = true;
+    leftBaseboard.receiveShadow = true;
+    group.add(leftBaseboard);
+
+    const rightBaseboard = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, room.depth), baseboardMaterial.clone());
+    rightBaseboard.position.set(room.rightX - 0.03, 0.04, room.centerZ);
+    rightBaseboard.castShadow = true;
+    rightBaseboard.receiveShadow = true;
+    group.add(rightBaseboard);
+
+    const trimMaterial = new THREE.MeshStandardMaterial({
+      color: 0xc69a67,
+      roughness: 0.78,
+      metalness: 0.02
+    });
+    const backCeilingTrim = new THREE.Mesh(new THREE.BoxGeometry(room.width, 0.06, 0.06), trimMaterial);
+    backCeilingTrim.position.set(room.centerX, room.height - 0.03, room.rearZ + 0.035);
+    backCeilingTrim.castShadow = true;
+    backCeilingTrim.receiveShadow = true;
+    group.add(backCeilingTrim);
+
+    const leftCeilingTrim = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, room.depth), trimMaterial.clone());
+    leftCeilingTrim.position.set(room.leftX + 0.035, room.height - 0.03, room.centerZ);
+    leftCeilingTrim.castShadow = true;
+    leftCeilingTrim.receiveShadow = true;
+    group.add(leftCeilingTrim);
+
+    const rightCeilingTrim = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, room.depth), trimMaterial.clone());
+    rightCeilingTrim.position.set(room.rightX - 0.035, room.height - 0.03, room.centerZ);
+    rightCeilingTrim.castShadow = true;
+    rightCeilingTrim.receiveShadow = true;
+    group.add(rightCeilingTrim);
+  }
+
+  private createCeilingLight(group: THREE.Group, room: ReturnType<Ps1ShelfScene['getRoomMetrics']>) {
+    const lightX = room.shelfCenter.x;
+    const lightZ = room.rearZ + room.depth * 0.48;
+    const fixtureMaterial = new THREE.MeshStandardMaterial({
+      color: 0xfff2d8,
+      emissive: 0xffdfa0,
+      emissiveIntensity: 1.2,
+      roughness: 0.35
+    });
+    const trimMaterial = new THREE.MeshStandardMaterial({
+      color: 0x6d604f,
+      roughness: 0.55,
+      metalness: 0.2
+    });
+
+    const trim = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.3, 0.08, 24), trimMaterial);
+    trim.position.set(lightX, room.height - 0.04, lightZ);
+    trim.castShadow = true;
+    group.add(trim);
+
+    const globe = new THREE.Mesh(new THREE.SphereGeometry(0.24, 20, 10), fixtureMaterial);
+    globe.scale.y = 0.45;
+    globe.position.set(lightX, room.height - 0.12, lightZ);
+    group.add(globe);
+
+    const pointLight = new THREE.PointLight(0xffe0ad, 4.2, room.depth * 1.35, 1.45);
+    pointLight.position.set(lightX, room.height - 0.22, lightZ);
+    pointLight.castShadow = true;
+    pointLight.shadow.mapSize.set(512, 512);
+    pointLight.shadow.bias = -0.00035;
+    pointLight.shadow.radius = 4;
+    group.add(pointLight);
+
+    const spotLight = new THREE.SpotLight(0xffedd0, 1.05, room.depth * 1.15, Math.PI / 2.8, 0.75, 1.4);
+    spotLight.position.set(lightX, room.height - 0.18, lightZ);
+    spotLight.target.position.set(room.shelfCenter.x, 0.75, room.shelfCenter.z + 1.1);
+    spotLight.castShadow = true;
+    spotLight.shadow.mapSize.set(512, 512);
+    spotLight.shadow.bias = -0.0004;
+    spotLight.shadow.radius = 5;
+    group.add(spotLight, spotLight.target);
+
+    const shelfFill = new THREE.PointLight(0xffefd5, 1.2, room.depth * 0.75, 1.6);
+    shelfFill.position.set(room.centerX, 2.1, room.frontZ - 1.2);
+    group.add(shelfFill);
+  }
+
+  private createBuiltInRoomFurniture(group: THREE.Group, room: ReturnType<Ps1ShelfScene['getRoomMetrics']>) {
+    const shelfLeft = room.shelfCenter.x - room.shelfSize.x / 2;
+    const bedWidth = 2.7;
+    const bedX = THREE.MathUtils.clamp(
+      shelfLeft - 1.75,
+      room.leftX + bedWidth / 2 + 0.35,
+      shelfLeft - bedWidth / 2 - 0.35
+    );
+    const rugMaterial = new THREE.MeshStandardMaterial({
+      color: 0x66798a,
+      roughness: 0.95
+    });
+
+    const rug = new THREE.Mesh(new THREE.PlaneGeometry(3.1, 1.9), rugMaterial);
+    rug.name = 'small-bedroom-rug';
+    rug.rotation.x = -Math.PI / 2;
+    rug.position.set(bedX, 0.018, room.rearZ + room.depth * 0.5);
+    rug.receiveShadow = true;
+    group.add(rug);
+
+    this.createTvStand(group, room);
+  }
+
+  private getTvStandMetrics(room: ReturnType<Ps1ShelfScene['getRoomMetrics']>) {
+    const width = 2.8;
+    const depth = 1.65;
+    const height = this.targetShelfHeight;
+    const boardThickness = 0.08;
+    return {
+      width,
+      depth,
+      height,
+      boardThickness,
+      centerX: room.shelfCenter.x + room.shelfSize.x / 2 + 0.25 + width / 2,
+      centerZ: room.rearZ + 0.12 + depth / 2,
+      consoleShelfY: height * 0.55
+    };
+  }
+
+  private createTvStand(group: THREE.Group, room: ReturnType<Ps1ShelfScene['getRoomMetrics']>) {
+    const stand = this.getTvStandMetrics(room);
+    const cabinet = new THREE.Group();
+    cabinet.name = 'tv-stand';
+    cabinet.position.set(stand.centerX, 0, stand.centerZ);
+    const material = new THREE.MeshStandardMaterial({ color: 0x704522, roughness: 0.82 });
+    const addBoard = (name: string, width: number, height: number, depth: number, x: number, y: number, z = 0) => {
+      const board = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material);
+      board.name = name;
+      board.position.set(x, y, z);
+      board.castShadow = true;
+      board.receiveShadow = true;
+      cabinet.add(board);
+    };
+    const t = stand.boardThickness;
+    addBoard('tv-stand-top', stand.width, t, stand.depth, 0, stand.height - t / 2);
+    addBoard('tv-stand-base', stand.width, t, stand.depth, 0, t / 2);
+    addBoard('tv-stand-console-shelf', stand.width - t * 2, t, stand.depth, 0, stand.consoleShelfY - t / 2);
+    for (const side of [-1, 1]) {
+      addBoard('tv-stand-side', t, stand.height - t * 2, stand.depth, side * (stand.width - t) / 2, stand.height / 2);
+    }
+    addBoard('tv-stand-back', stand.width - t * 2, stand.height - t * 2, t, 0, stand.height / 2, -(stand.depth - t) / 2);
+    group.add(cabinet);
+  }
+
+  private createWallpaperMaterial(repeatX: number, repeatY: number) {
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.88,
+      metalness: 0.02,
+      side: THREE.DoubleSide
+    });
+
+    if (this.backgroundTexture) {
+      const texture = this.backgroundTexture.clone();
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      texture.repeat.set(Math.max(1, repeatX), Math.max(1, repeatY));
+      texture.needsUpdate = true;
+      material.map = texture;
+    }
+
+    return material;
+  }
+
+  private createCarpetMaterial() {
+    const texture = this.createCanvasTexture(128, (ctx, size) => {
+      ctx.fillStyle = '#8c7f70';
+      ctx.fillRect(0, 0, size, size);
+      for (let i = 0; i < 2200; i += 1) {
+        const shade = 102 + Math.floor(Math.random() * 54);
+        ctx.fillStyle = `rgb(${shade + 22}, ${shade + 16}, ${shade + 8})`;
+        ctx.fillRect(Math.random() * size, Math.random() * size, 1 + Math.random() * 2, 1);
+      }
+      ctx.globalAlpha = 0.18;
+      ctx.strokeStyle = '#66594d';
+      for (let y = 0; y < size; y += 6) {
+        ctx.beginPath();
+        ctx.moveTo(0, y + Math.random() * 2);
+        ctx.lineTo(size, y + Math.random() * 2);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    });
+    texture.repeat.set(10, 7);
+
+    const bump = this.createCanvasTexture(64, (ctx, size) => {
+      ctx.fillStyle = '#999';
+      ctx.fillRect(0, 0, size, size);
+      for (let i = 0; i < 1800; i += 1) {
+        const shade = 110 + Math.floor(Math.random() * 80);
+        ctx.fillStyle = `rgb(${shade}, ${shade}, ${shade})`;
+        ctx.fillRect(Math.random() * size, Math.random() * size, 1, 1);
+      }
+    });
+    bump.colorSpace = THREE.NoColorSpace;
+    bump.repeat.set(14, 10);
+
+    return new THREE.MeshStandardMaterial({
+      color: 0xc1aa8d,
+      map: texture,
+      bumpMap: bump,
+      bumpScale: 0.025,
+      roughness: 0.96,
+      metalness: 0,
+      side: THREE.DoubleSide
+    });
+  }
+
+  private createPopcornCeilingMaterial() {
+    const texture = this.createCanvasTexture(128, (ctx, size) => {
+      ctx.fillStyle = '#eee7d8';
+      ctx.fillRect(0, 0, size, size);
+      for (let i = 0; i < 1400; i += 1) {
+        const radius = 0.5 + Math.random() * 1.8;
+        const shade = 205 + Math.floor(Math.random() * 38);
+        ctx.fillStyle = `rgb(${shade}, ${shade - 3}, ${shade - 8})`;
+        ctx.beginPath();
+        ctx.arc(Math.random() * size, Math.random() * size, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+    texture.repeat.set(12, 8);
+
+    const bump = texture.clone();
+    bump.colorSpace = THREE.NoColorSpace;
+    bump.needsUpdate = true;
+
+    return new THREE.MeshStandardMaterial({
+      color: 0xfff8e9,
+      map: texture,
+      bumpMap: bump,
+      bumpScale: 0.05,
+      roughness: 0.98,
+      metalness: 0,
+      side: THREE.DoubleSide
+    });
+  }
+
+  private createCanvasTexture(size: number, paint: (ctx: CanvasRenderingContext2D, size: number) => void) {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (ctx) paint(ctx, size);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  private async loadRoomProps(
+    loadVersion: number,
+    group: THREE.Group,
+    room: ReturnType<Ps1ShelfScene['getRoomMetrics']>
+  ) {
+    const props = this.getRoomPropConfigs(room);
+    await Promise.all(props.map(async (config) => {
+      const url = this.getRoomModelUrl(config.filename);
+      if (!url) {
+        console.warn(`Room model not found: src/assets/room/${config.filename}`);
+        return;
+      }
+
+      try {
+        const gltf = await this.trackAssetLoad(Ps1ShelfScene.gltfLoader.loadAsync(url));
+        if (this.isDestroyed || loadVersion !== this.roomLoadVersion || group !== this.roomGroup) {
+          this.disposeObjectResources(gltf.scene);
+          return;
+        }
+
+        const object = this.normalizeRoomProp(gltf.scene, config);
+        object.name = config.label;
+        group.add(object);
+      } catch (err) {
+        console.warn(`Failed to load room model: ${config.filename}`, err);
+      }
+    }));
+  }
+
+  private getRoomModelUrl(filename: string) {
+    return roomModelUrls[`../../assets/room/${filename}`];
+  }
+
+  private getRoomPropConfigs(room: ReturnType<Ps1ShelfScene['getRoomMetrics']>): RoomPropConfig[] {
+    const shelfLeft = room.shelfCenter.x - room.shelfSize.x / 2;
+    const stand = this.getTvStandMetrics(room);
+    const furnitureReferenceHeight = 1.43;
+    const deskWidth = 2.75;
+    const bedWidth = 2.7;
+    const bedX = THREE.MathUtils.clamp(
+      shelfLeft - 1.75,
+      room.leftX + bedWidth / 2 + 0.35,
+      shelfLeft - bedWidth / 2 - 0.35
+    );
+    const deskDepth = 1.35;
+    const deskX = room.rightX - deskDepth / 2 - 0.25;
+    const bedZ = room.rearZ + 2.08;
+    const deskZ = room.rearZ + stand.depth + 1.75;
+
+    return [
+      {
+        filename: 'bed.glb',
+        label: 'bed',
+        position: new THREE.Vector3(bedX, 0, bedZ),
+        targetSize: new THREE.Vector3(bedWidth, furnitureReferenceHeight * 1.32, 4.15),
+        rotationY: 0
+      },
+      {
+        filename: 'nightstand.glb',
+        label: 'nightstand',
+        position: new THREE.Vector3(bedX - bedWidth / 2 - 0.55, 0, bedZ - 1.15),
+        targetSize: new THREE.Vector3(0.82, 0.86, 0.82),
+        rotationY: Math.PI / 2
+      },
+      {
+        filename: 'desk.glb',
+        label: 'desk',
+        position: new THREE.Vector3(deskX, 0, deskZ),
+        targetSize: new THREE.Vector3(deskDepth, furnitureReferenceHeight * 1.16, deskWidth),
+        rotationY: Math.PI / 2
+      },
+      {
+        filename: 'chair.glb',
+        label: 'desk-chair',
+        position: new THREE.Vector3(deskX - 1.15, 0, deskZ),
+        targetSize: new THREE.Vector3(1.2, furnitureReferenceHeight * 1.2, 1.2),
+        rotationY: -Math.PI / 2
+      },
+      {
+        filename: 'crt_tv.glb',
+        label: 'crt-tv',
+        position: new THREE.Vector3(stand.centerX, stand.height, stand.centerZ),
+        targetSize: new THREE.Vector3(stand.width - 0.2, 1.5, stand.depth - 0.2),
+        rotationY: Math.PI
+      },
+      {
+        filename: 'psone.glb',
+        label: 'psone-console',
+        position: new THREE.Vector3(stand.centerX, stand.consoleShelfY, stand.centerZ + 0.3),
+        targetSize: new THREE.Vector3(0.76, 0.18, 0.54),
+        scaleMode: 'height',
+        rotationY: 0
+      },
+      {
+        filename: 'floor_lamp.glb',
+        label: 'floor-lamp',
+        position: new THREE.Vector3(room.rightX - 0.55, 0, room.rearZ + 0.75),
+        targetSize: new THREE.Vector3(0.62, 2.4, 0.62),
+        rotationY: -Math.PI / 4
+      },
+      {
+        filename: 'beanbag.glb',
+        label: 'beanbag',
+        position: new THREE.Vector3(room.centerX - 2.6, 0, room.rearZ + room.depth * 0.54),
+        targetSize: new THREE.Vector3(1.25, 0.7, 1.25),
+        rotationY: -Math.PI / 6
+      }
+    ];
+  }
+
+  private normalizeRoomProp(rawObject: THREE.Object3D, config: RoomPropConfig) {
+    this.applyObjectShadows(rawObject);
+    rawObject.rotation.y = config.rotationY ?? 0;
+    rawObject.updateMatrixWorld(true);
+
+    const rawBounds = new THREE.Box3().setFromObject(rawObject);
+    const rawSize = rawBounds.getSize(new THREE.Vector3());
+    if (!rawSize.x || !rawSize.y || !rawSize.z) return rawObject;
+
+    const scale = config.scaleMode === 'height'
+      ? config.targetSize.y / rawSize.y
+      : Math.min(
+        config.targetSize.x / rawSize.x,
+        config.targetSize.y / rawSize.y,
+        config.targetSize.z / rawSize.z
+      );
+    rawObject.scale.setScalar(scale);
+    rawObject.updateMatrixWorld(true);
+
+    const scaledBounds = new THREE.Box3().setFromObject(rawObject);
+    const scaledCenter = scaledBounds.getCenter(new THREE.Vector3());
+    const yAnchor = (config.alignToFloor ?? true) ? scaledBounds.min.y : scaledCenter.y;
+    rawObject.position.sub(new THREE.Vector3(scaledCenter.x, yAnchor, scaledCenter.z));
+    rawObject.updateMatrixWorld(true);
+
+    const anchor = new THREE.Group();
+    anchor.add(rawObject);
+    anchor.position.copy(config.position);
+    return anchor;
+  }
+
+  private applyObjectShadows(object: THREE.Object3D) {
+    object.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
   }
 
   private trackAssetLoad<T>(promise: Promise<T>) {
@@ -242,10 +783,10 @@ export class Ps1ShelfScene {
   private createShelf(gameCount: number) {
     this.shelfGameCount = gameCount;
     const loadVersion = ++this.shelfLoadVersion;
-    void this.loadShelfModel(gameCount, loadVersion);
+    void this.loadShelfModel(loadVersion);
   }
 
-  private async loadShelfModel(gameCount: number, loadVersion: number) {
+  private async loadShelfModel(loadVersion: number) {
     this.clearShelf();
 
     try {
@@ -256,17 +797,17 @@ export class Ps1ShelfScene {
       }
 
       const shelf = gltf.scene;
-      shelf.traverse((child) => {
-        if (child instanceof THREE.Mesh) {
-          child.castShadow = true;
-          child.receiveShadow = true;
-        }
-      });
+      this.applyObjectShadows(shelf);
 
       const bounds = new THREE.Box3().setFromObject(shelf);
       const size = bounds.getSize(new THREE.Vector3());
       const center = bounds.getCenter(new THREE.Vector3());
-      const scale = size.x > 0 ? this.targetShelfWidth / size.x : 1;
+      if (size.x <= 0 || size.y <= 0 || size.z <= 0) {
+        this.disposeObjectResources(shelf);
+        throw new Error('Bookshelf model has invalid dimensions.');
+      }
+      const scale = this.targetShelfHeight / size.y;
+      this.setShelfContentScale(size.x * scale / this.referenceShelfWidth);
 
       shelf.scale.setScalar(scale);
       shelf.position.set(-center.x * scale, -bounds.min.y * scale, -center.z * scale);
@@ -274,6 +815,7 @@ export class Ps1ShelfScene {
       this.scene.add(shelf);
       this.shelfObject = shelf;
       this.updateShelfBoundsFromObject(shelf);
+      this.rebuildRoom();
       void this.loadShelfProps(loadVersion);
       this.renderShelfDebug();
       this.applyView();
@@ -281,20 +823,37 @@ export class Ps1ShelfScene {
     } catch (err) {
       if (this.isDestroyed || loadVersion !== this.shelfLoadVersion) return;
       console.warn('Failed to load bookshelf.glb, falling back to a box shelf.', err);
-      this.createFallbackShelf(gameCount);
+      this.createFallbackShelf();
     }
   }
 
-  private createFallbackShelf(gameCount: number) {
-    // Keep a basic platform so the scene still works if the model cannot load.
-    const geometry = new THREE.BoxGeometry(gameCount * 0.4, 0.2, 1.2);
+  private createFallbackShelf() {
+    // Preserve the model's proportions and four usable rows if loading fails.
+    const height = this.targetShelfHeight;
+    const width = height * 0.562;
+    const depth = height * 0.285;
+    this.setShelfContentScale(width / this.referenceShelfWidth);
     const material = new THREE.MeshStandardMaterial({ color: 0xd6b07a });
-    const shelf = new THREE.Mesh(geometry, material);
-    shelf.position.set(0, 0.3, 0);
-    shelf.receiveShadow = true;
+    const shelf = new THREE.Group();
+    const addPanel = (w: number, h: number, d: number, x: number, y: number, z = 0) => {
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+      panel.position.set(x, y, z);
+      shelf.add(panel);
+    };
+    const sideWidth = width * 0.04;
+    addPanel(sideWidth, height, depth, -(width - sideWidth) / 2, height / 2);
+    addPanel(sideWidth, height, depth, (width - sideWidth) / 2, height / 2);
+    addPanel(width, height, depth * 0.08, 0, height / 2, -depth * 0.46);
+    this.shelfRowSpecs.forEach((row) => {
+      const thickness = height * 0.025;
+      addPanel(width, thickness, depth, 0, height * row.minY - thickness / 2);
+    });
+    addPanel(width, height * 0.015, depth, 0, height * 0.9925);
+    this.applyObjectShadows(shelf);
     this.scene.add(shelf);
     this.shelfObject = shelf;
     this.updateShelfBoundsFromObject(shelf);
+    this.rebuildRoom();
     void this.loadShelfProps(this.shelfLoadVersion);
     this.renderShelfDebug();
     this.applyView();
@@ -303,6 +862,13 @@ export class Ps1ShelfScene {
 
   private updateShelfBoundsFromObject(object: THREE.Object3D) {
     this.shelfBounds = new THREE.Box3().setFromObject(object);
+  }
+
+  private setShelfContentScale(scale: number) {
+    this.shelfContentScale = scale;
+    this.cases.forEach((gameCase) => gameCase.group.scale.setScalar(scale));
+    this.selectedCameraDistance = this.selectedCameraDefaultDistance;
+    this.viewAnimation = null;
   }
 
   private getShelfRowBoxes() {
@@ -372,18 +938,22 @@ export class Ps1ShelfScene {
 
     const size = bounds.getSize(new THREE.Vector3());
     const center = bounds.getCenter(new THREE.Vector3());
+    const room = this.getRoomMetrics();
     const halfFovY = THREE.MathUtils.degToRad(this.camera.fov * 0.5);
     const halfFovX = Math.atan(Math.tan(halfFovY) * this.camera.aspect);
-    const distanceForHeight = (size.y * 0.55) / Math.tan(halfFovY);
-    const distanceForWidth = (size.x * 0.6) / Math.tan(halfFovX || halfFovY);
+    const framedHeight = Math.max(size.y + 1.8, room.height * 1.3);
+    const framedWidth = Math.max(size.x * 1.25, room.width * 0.58);
+    const distanceForHeight = (framedHeight * 0.5) / Math.tan(halfFovY);
+    const distanceForWidth = (framedWidth * 0.5) / Math.tan(halfFovX || halfFovY);
     const distance = THREE.MathUtils.clamp(
-      Math.max(distanceForHeight, distanceForWidth, size.z * 1.8) + 0.8,
-      4,
+      Math.max(distanceForHeight, distanceForWidth, size.z * 2.4) + 0.7,
+      7,
       this.cameraMaxDistance
     );
 
-    this.freeCameraTarget.set(center.x, center.y, center.z);
-    this.freeCameraPosition.set(center.x, center.y + size.y * 0.04, center.z + distance);
+    const targetY = THREE.MathUtils.clamp(room.height * 0.52, center.y + 0.45, room.height - 1);
+    this.freeCameraTarget.set(center.x, targetY, center.z + 0.15);
+    this.freeCameraPosition.set(center.x, targetY - 0.85, center.z + distance);
 
     if (this.selectedIndex === null) {
       this.cameraTarget.copy(this.freeCameraTarget);
@@ -403,9 +973,10 @@ export class Ps1ShelfScene {
     this.shelfGames = [...games];
     if (!games?.length) return;
 
-    const width = this.caseWidth;
-    const height = this.caseHeight;
-    const depth = this.caseDepth;
+    // Geometry stays at reference size; the model scale also applies to its covers.
+    const width = this.caseWidth / this.shelfContentScale;
+    const height = this.caseHeight / this.shelfContentScale;
+    const depth = this.caseDepth / this.shelfContentScale;
 
     games.forEach((game, index) => {
       const gameCase = new GameCase({
@@ -418,6 +989,8 @@ export class Ps1ShelfScene {
         trackAssetLoad: (promise) => this.trackAssetLoad(promise)
       });
       gameCase.group.userData.caseIndex = index;
+      gameCase.group.scale.setScalar(this.shelfContentScale);
+      this.applyObjectShadows(gameCase.group);
       this.scene.add(gameCase.group);
       this.cases.push(gameCase);
     });
@@ -610,7 +1183,7 @@ export class Ps1ShelfScene {
       ? lastGameX + this.caseDepth / 2 + this.shelfPropGap
       : options.rowBox.min.x + this.shelfCaseXPadding;
     const availableWidth = Math.max(options.rowBox.max.x - this.shelfCaseXPadding - propStartX, 0);
-    if (availableWidth < 0.08) {
+    if (availableWidth < this.shelfPropGap) {
       this.disposeObjectResources(rawObject);
       return null;
     }
@@ -976,6 +1549,7 @@ export class Ps1ShelfScene {
   }
 
   private clearShelf() {
+    this.clearRoom();
     this.clearShelfDebug();
     this.clearShelfProps();
     if (!this.shelfObject) return;
@@ -984,6 +1558,15 @@ export class Ps1ShelfScene {
     this.disposeObjectResources(this.shelfObject);
     this.shelfObject = null;
     this.shelfBounds = null;
+  }
+
+  private clearRoom() {
+    this.roomLoadVersion += 1;
+    if (!this.roomGroup) return;
+
+    this.scene.remove(this.roomGroup);
+    this.disposeObjectResources(this.roomGroup);
+    this.roomGroup = null;
   }
 
   private clearShelfDebug() {
