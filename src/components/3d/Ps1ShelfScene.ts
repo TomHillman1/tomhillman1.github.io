@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { GameCase } from './GameCase';
 import { loadTexture } from './materials';
 import { Ps1PostProcessing } from './Ps1PostProcessing';
@@ -101,6 +102,7 @@ export class Ps1ShelfScene {
   private frameId: number | null = null;
   private lastFrameTime = performance.now();
   private backgroundTexture: THREE.Texture | null = null;
+  private caseEnvironment: THREE.WebGLRenderTarget;
   private roomGroup: THREE.Group | null = null;
   private shelfObject: THREE.Object3D | null = null;
   private shelfPropObjects: THREE.Object3D[] = [];
@@ -184,6 +186,13 @@ export class Ps1ShelfScene {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // One shared indoor reflection map gives the clear cases moving highlights.
+    // Assign it only to case plastic so the bedroom's existing lighting is preserved.
+    const reflectionRoom = new RoomEnvironment();
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.caseEnvironment = pmrem.fromScene(reflectionRoom, 0.02);
+    reflectionRoom.dispose();
+    pmrem.dispose();
     this.container.appendChild(this.renderer.domElement);
     this.postProcessing = new Ps1PostProcessing(this.renderer, this.scene, this.camera, {
       pixelSize: 1,
@@ -1042,11 +1051,12 @@ export class Ps1ShelfScene {
         frontUrl: game.frontUrl ?? null,
         backUrl: game.backUrl ?? null,
         sideUrl: game.sideUrl ?? null,
+        environmentMap: this.caseEnvironment.texture,
         trackAssetLoad: (promise) => this.trackAssetLoad(promise)
       });
       gameCase.group.userData.caseIndex = index;
       gameCase.group.scale.setScalar(this.shelfContentScale);
-      this.applyObjectShadows(gameCase.group);
+      // GameCase casts shadows from its tray, not from its transparent cover windows.
       this.scene.add(gameCase.group);
       this.cases.push(gameCase);
     });
@@ -1585,6 +1595,7 @@ export class Ps1ShelfScene {
     this.clearShelf();
     this.clearCases();
     this.backgroundTexture?.dispose();
+    this.caseEnvironment.dispose();
     this.backgroundTexture = null;
     this.postProcessing.dispose();
     this.renderer.dispose();
