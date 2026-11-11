@@ -6,11 +6,13 @@
   import {
     PS1_GAME_PRESS_EVENT,
     PS1_LOADING_PROGRESS_EVENT,
+    PS1_NAVIGATION_CHANGE_EVENT,
     PS1_SELECTION_CHANGE_EVENT,
     Ps1ShelfScene,
     type ShelfGamePressDetail,
     type ShelfGame,
     type ShelfLoadingProgressDetail,
+    type Ps1NavigationChangeDetail,
     type ShelfSelectionChangeDetail,
     type ShelfView
   } from './3d/Ps1ShelfScene';
@@ -23,6 +25,8 @@
   let scene: Ps1ShelfScene | null = null;
   let currentView: ShelfView = 'front';
   let selectedGame: ShelfGame | null = null;
+  let navigationLocked = false;
+  let navigationError = '';
   let loadingActive = true;
   let loadingProgress = 0;
   let loadingLoaded = 0;
@@ -59,6 +63,8 @@
     scene = null;
     currentView = 'front';
     selectedGame = null;
+    navigationLocked = false;
+    navigationError = '';
     loadingActive = true;
     loadingProgress = 0;
     loadingLoaded = 0;
@@ -192,10 +198,16 @@
       loadingLoaded = detail.loaded;
       loadingTotal = detail.total;
     };
+    const onNavigationChange = (event: Event) => {
+      const detail = (event as CustomEvent<Ps1NavigationChangeDetail>).detail;
+      navigationLocked = detail.locked && detail.mode === 'navigate';
+      navigationError = detail.error;
+    };
 
     container.addEventListener(PS1_SELECTION_CHANGE_EVENT, onSelectionChange);
     container.addEventListener(PS1_GAME_PRESS_EVENT, onGamePress);
     container.addEventListener(PS1_LOADING_PROGRESS_EVENT, onLoadingProgress);
+    container.addEventListener(PS1_NAVIGATION_CHANGE_EVENT, onNavigationChange);
     document.addEventListener('fullscreenchange', syncFullscreenState);
     mounted = true;
     syncFullscreenState();
@@ -204,6 +216,7 @@
       container?.removeEventListener(PS1_SELECTION_CHANGE_EVENT, onSelectionChange);
       container?.removeEventListener(PS1_GAME_PRESS_EVENT, onGamePress);
       container?.removeEventListener(PS1_LOADING_PROGRESS_EVENT, onLoadingProgress);
+      container?.removeEventListener(PS1_NAVIGATION_CHANGE_EVENT, onNavigationChange);
       document.removeEventListener('fullscreenchange', syncFullscreenState);
       pauseMusic();
       destroyScene();
@@ -245,6 +258,21 @@
     <button class="fullscreen-toggle" type="button" on:click={toggleFullscreen}>
       {isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
     </button>
+    {#if !overlayActive}
+      {#if navigationLocked}
+        <div class="navigation-crosshair" aria-hidden="true">+</div>
+        <div class="navigation-hint">WASD to walk · Mouse to look · Esc to release mouse</div>
+      {:else}
+        <div class="navigation-prompt">
+          <button type="button" on:click={() => scene?.startNavigation()}>
+            {selectedGame ? 'Return to room' : 'Click to navigate'}
+          </button>
+          {#if navigationError}
+            <p role="status">{navigationError}</p>
+          {/if}
+        </div>
+      {/if}
+    {/if}
     <AudioControl
       disabled={!canUseMusicControls}
       loading={musicLoading}
@@ -330,6 +358,46 @@
   .stage {
     width: 100%;
     height: 100%;
+  }
+  .navigation-crosshair {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 2;
+    color: white;
+    font: 24px/1 monospace;
+    text-shadow: 1px 1px 2px black;
+    pointer-events: none;
+  }
+  .navigation-prompt, .navigation-hint {
+    position: absolute;
+    bottom: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2;
+    max-width: 65%;
+    color: white;
+    text-align: center;
+    font-size: 0.75rem;
+  }
+  .navigation-hint {
+    padding: 0.4rem 0.7rem;
+    background: rgba(0, 0, 0, 0.75);
+    pointer-events: none;
+  }
+  .navigation-prompt button {
+    padding: 0.6rem 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.85);
+    color: white;
+    cursor: pointer;
+  }
+  .navigation-prompt p {
+    margin: 0.4rem 0 0;
+    padding: 0.4rem;
+    background: rgba(0, 0, 0, 0.85);
   }
 
 </style>

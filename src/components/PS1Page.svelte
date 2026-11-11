@@ -54,9 +54,10 @@
   <div class="my-4 w-full text-left">
     <b>Controls:</b>
     <ul class="list-disc pl-6">
-      <li>WASD/Arrows: Move Camera</li>
-      <li>Left Click: Select Game</li>
-      <li>Scroll Wheel: Zoom/Unzoom</li>
+      <li>Click to navigate, then use WASD to walk and the mouse to look around.</li>
+      <li>Aim the crosshair at a game and left-click to select it.</li>
+      <li>Scroll to zoom; right-click to reset zoom.</li>
+      <li>Escape releases the mouse. Use Return to room after selecting a game.</li>
     </ul>
   </div>
   <footer class="my-4 w-full text-left text-sm text-surface-600 dark:text-surface-200">

@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 import { GameCase } from './GameCase';
 import { loadTexture } from './materials';
 import { Ps1PostProcessing } from './Ps1PostProcessing';
+import { Ps1Navigation } from './Ps1Navigation';
 import bookshelfUrl from '../../assets/bookshelf.glb?url';
 import gameBoyColorUrl from '../../assets/game_boy_color.glb?url';
 import nokiaUrl from '../../assets/nokia_6230.glb?url';
@@ -50,6 +52,9 @@ export type ShelfLoadingProgressDetail = {
   progress: number;
 };
 export const PS1_LOADING_PROGRESS_EVENT = 'ps1-loading-progress';
+export type Ps1CameraMode = 'navigate' | 'inspect';
+export type Ps1NavigationChangeDetail = { locked: boolean; mode: Ps1CameraMode; error: string };
+export const PS1_NAVIGATION_CHANGE_EVENT = 'ps1-navigation-change';
 
 type CaseTransform = {
   x: number;
@@ -92,11 +97,19 @@ export class Ps1ShelfScene {
   private camera: THREE.PerspectiveCamera;
   private renderer: THREE.WebGLRenderer;
   private postProcessing: Ps1PostProcessing;
+  private controls: PointerLockControls;
+  private cameraMode: Ps1CameraMode = 'navigate';
+  private navigationOrientation = new THREE.Quaternion();
+  private navigationInitialized = false;
+  private navigationError = '';
+  private lockRequested = false;
+  private movementForward = new THREE.Vector3();
+  private movementRight = new THREE.Vector3();
+  private movementDelta = new THREE.Vector3();
   private raycaster = new THREE.Raycaster();
   private pointer = new THREE.Vector2();
   private cameraTarget = new THREE.Vector3(0, 0.6, 0);
   private freeCameraPosition = new THREE.Vector3(0, 1.2, 4);
-  private freeCameraTarget = new THREE.Vector3(0, 0.6, 0);
   private cameraDesiredPosition = new THREE.Vector3(0, 1.2, 4);
   private cameraDesiredTarget = new THREE.Vector3(0, 0.6, 0);
   private frameId: number | null = null;
@@ -132,19 +145,16 @@ export class Ps1ShelfScene {
   private readonly viewAnimationDurationMs = 500;
   private readonly cameraFocusDamping = 8;
   private readonly cameraMoveSpeed = 2.4;
-  private readonly cameraZoomSpeed = 0.01;
-  private readonly cameraMinDistance = 1.5;
-  private readonly cameraMaxDistance = 32;
+  private readonly defaultFov = 45;
   private get selectedCameraYOffset() { return 0.1 * this.shelfContentScale; }
   private get selectedCameraDefaultDistance() { return 2.1 * this.shelfContentScale; }
-  private get selectedCameraMinDistance() { return 1.2 * this.shelfContentScale; }
-  private readonly selectedCameraMaxDistance = 10;
   private selectedCameraDistance = 2.1;
   private readonly showShelfDebug = false;
   private readonly roomDepth = 9.5;
   private readonly roomMinWidth = 11;
   // Treat the wall as eight feet high, with a three-foot game shelf.
   private readonly roomHeight = 6.5;
+  private readonly navigation = new Ps1Navigation(0.28, this.roomHeight * 0.64);
   private readonly targetShelfHeight = this.roomHeight * 3 / 8;
   private readonly referenceShelfWidth = 2.53;
   private shelfContentScale = 1;
@@ -174,8 +184,8 @@ export class Ps1ShelfScene {
     this.scene.background = new THREE.Color(0x080604);
     void this.loadBackground();
 
-    // Camera framing: slightly above and in front of the shelf.
-    this.camera = new THREE.PerspectiveCamera(45, clientWidth / clientHeight, 0.1, 100);
+    // The grounded spawn is assigned once the shelf establishes the room bounds.
+    this.camera = new THREE.PerspectiveCamera(this.defaultFov, clientWidth / Math.max(clientHeight, 1), 0.1, 100);
     this.camera.position.copy(this.freeCameraPosition);
     this.camera.lookAt(this.cameraTarget);
 
@@ -194,6 +204,12 @@ export class Ps1ShelfScene {
     reflectionRoom.dispose();
     pmrem.dispose();
     this.container.appendChild(this.renderer.domElement);
+    this.renderer.domElement.tabIndex = 0;
+    this.renderer.domElement.setAttribute('aria-label', 'PS1 room. Click to navigate with WASD and mouse. Escape releases the mouse.');
+    this.controls = new PointerLockControls(this.camera, this.renderer.domElement);
+    this.controls.minPolarAngle = 0.1;
+    this.controls.maxPolarAngle = Math.PI - 0.1;
+    this.controls.pointerSpeed = 0.75;
     this.postProcessing = new Ps1PostProcessing(this.renderer, this.scene, this.camera, {
       pixelSize: 1,
       colorLevels: 24,
@@ -223,6 +239,11 @@ export class Ps1ShelfScene {
     window.addEventListener('keyup', this.onKeyUp);
     this.renderer.domElement.addEventListener('wheel', this.onWheel, { passive: false });
     this.renderer.domElement.addEventListener('click', this.onClick);
+    this.renderer.domElement.addEventListener('contextmenu', this.onContextMenu);
+    document.addEventListener('pointerlockchange', this.onPointerLockChange);
+    document.addEventListener('pointerlockerror', this.onPointerLockError);
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
+    window.addEventListener('blur', this.pauseNavigation);
   }
 
   private async loadBackground() {
@@ -258,6 +279,13 @@ export class Ps1ShelfScene {
     group.name = 'ps1-bedroom-room';
 
     const room = this.getRoomMetrics();
+    this.navigation.setRoom(new THREE.Box3(
+      new THREE.Vector3(room.leftX, 0, room.rearZ),
+      new THREE.Vector3(room.rightX, room.height, room.frontZ)
+    ));
+    if (this.shelfObject) this.registerObstacle(this.shelfObject);
+    this.shelfPropObjects.forEach((object) => this.registerObstacle(object));
+    this.cases.forEach((gameCase) => this.registerObstacle(gameCase.group));
     this.createRoomShell(group, room);
     this.createCeilingLight(group, room);
     this.createBuiltInRoomFurniture(group, room);
@@ -274,7 +302,7 @@ export class Ps1ShelfScene {
     const width = Math.max(this.roomMinWidth, shelfSize.x * 3.5);
     const height = this.roomHeight;
     const rearZ = bounds.min.z - 0.08;
-    const depth = Math.max(this.roomDepth, this.freeCameraPosition.z - rearZ + 2.5);
+    const depth = this.roomDepth;
     const centerX = shelfCenter.x;
     const centerZ = rearZ + depth / 2;
 
@@ -311,6 +339,13 @@ export class Ps1ShelfScene {
     backWall.receiveShadow = true;
     group.add(backWall);
 
+    const frontWall = new THREE.Mesh(new THREE.PlaneGeometry(room.width, room.height), wallMaterial.clone());
+    frontWall.name = 'wallpaper-front-wall';
+    frontWall.rotation.y = Math.PI;
+    frontWall.position.set(room.centerX, room.height / 2, room.frontZ);
+    frontWall.receiveShadow = true;
+    group.add(frontWall);
+
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(room.width, room.depth), carpetMaterial);
     floor.name = 'low-pile-carpet';
     floor.rotation.x = -Math.PI / 2;
@@ -345,6 +380,12 @@ export class Ps1ShelfScene {
     backBaseboard.receiveShadow = true;
     group.add(backBaseboard);
 
+    const frontBaseboard = backBaseboard.clone();
+    frontBaseboard.geometry = backBaseboard.geometry.clone();
+    frontBaseboard.material = baseboardMaterial.clone();
+    frontBaseboard.position.z = room.frontZ - 0.03;
+    group.add(frontBaseboard);
+
     const leftBaseboard = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, room.depth), baseboardMaterial.clone());
     leftBaseboard.position.set(room.leftX + 0.03, 0.04, room.centerZ);
     leftBaseboard.castShadow = true;
@@ -367,6 +408,12 @@ export class Ps1ShelfScene {
     backCeilingTrim.castShadow = true;
     backCeilingTrim.receiveShadow = true;
     group.add(backCeilingTrim);
+
+    const frontCeilingTrim = backCeilingTrim.clone();
+    frontCeilingTrim.geometry = backCeilingTrim.geometry.clone();
+    frontCeilingTrim.material = trimMaterial.clone();
+    frontCeilingTrim.position.z = room.frontZ - 0.035;
+    group.add(frontCeilingTrim);
 
     const leftCeilingTrim = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, room.depth), trimMaterial.clone());
     leftCeilingTrim.position.set(room.leftX + 0.035, room.height - 0.03, room.centerZ);
@@ -484,6 +531,7 @@ export class Ps1ShelfScene {
     }
     addBoard('tv-stand-back', stand.width - t * 2, stand.height - t * 2, t, 0, stand.height / 2, -(stand.depth - t) / 2);
     group.add(cabinet);
+    this.registerObstacle(cabinet);
   }
 
   private createWallpaperMaterial(repeatX: number, repeatY: number) {
@@ -630,6 +678,7 @@ export class Ps1ShelfScene {
       const object = this.normalizeRoomProp(gltf.scene, config);
       object.name = config.label;
       group.add(object);
+      this.registerObstacle(object);
       return object;
     } catch (err) {
       console.warn(`Failed to load room model: ${config.filename}`, err);
@@ -998,38 +1047,41 @@ export class Ps1ShelfScene {
   }
 
   private updateFreeCameraFrame() {
-    const bounds = this.shelfBounds;
-    if (!bounds) return;
-
-    const size = bounds.getSize(new THREE.Vector3());
-    const center = bounds.getCenter(new THREE.Vector3());
+    if (!this.shelfBounds) return;
     const room = this.getRoomMetrics();
-    const halfFovY = THREE.MathUtils.degToRad(this.camera.fov * 0.5);
-    const halfFovX = Math.atan(Math.tan(halfFovY) * this.camera.aspect);
-    const framedHeight = Math.max(size.y + 1.8, room.height * 1.3);
-    const framedWidth = Math.max(size.x * 1.25, room.width * 0.58);
-    const distanceForHeight = (framedHeight * 0.5) / Math.tan(halfFovY);
-    const distanceForWidth = (framedWidth * 0.5) / Math.tan(halfFovX || halfFovY);
-    const distance = THREE.MathUtils.clamp(
-      Math.max(distanceForHeight, distanceForWidth, size.z * 2.4) + 0.7,
-      7,
-      this.cameraMaxDistance
-    );
+    if (!this.navigationInitialized) {
+      this.freeCameraPosition.set(room.centerX, this.navigation.eyeHeight, room.rearZ + room.depth * 0.72);
+      const spawn = this.navigation.findFreePosition(this.freeCameraPosition);
+      if (!spawn) return;
+      this.freeCameraPosition.copy(spawn);
+      this.camera.position.copy(spawn);
+      this.camera.lookAt(room.shelfCenter);
+      this.navigationOrientation.copy(this.camera.quaternion);
+      this.navigationInitialized = true;
+    }
+    this.ensureSafeNavigationPosition();
+  }
 
-    const targetY = THREE.MathUtils.clamp(room.height * 0.52, center.y + 0.45, room.height - 1);
-    this.freeCameraTarget.set(center.x, targetY, center.z + 0.15);
-    this.freeCameraPosition.set(center.x, targetY - 0.85, center.z + distance);
+  private registerObstacle(object: THREE.Object3D) {
+    object.updateWorldMatrix(true, true);
+    this.navigation.setObstacle(object, new THREE.Box3().setFromObject(object));
+    if (this.navigationInitialized) this.ensureSafeNavigationPosition();
+  }
 
-    if (this.selectedIndex === null) {
-      this.cameraTarget.copy(this.freeCameraTarget);
-      this.cameraDesiredTarget.copy(this.freeCameraTarget);
-      this.camera.position.copy(this.freeCameraPosition);
-      this.cameraDesiredPosition.copy(this.freeCameraPosition);
-      this.camera.lookAt(this.cameraTarget);
+  private ensureSafeNavigationPosition() {
+    const safe = this.navigation.findFreePosition(this.freeCameraPosition);
+    if (!safe) {
+      this.pauseNavigation();
+      return;
+    }
+    this.freeCameraPosition.copy(safe);
+    if (this.cameraMode === 'navigate') {
+      this.camera.position.copy(safe);
     }
   }
 
   setGames(games: ShelfGame[]) {
+    if (this.cameraMode === 'inspect') this.exitInspection();
     if (games.length !== this.shelfGameCount) {
       this.createShelf(games.length);
     }
@@ -1205,6 +1257,7 @@ export class Ps1ShelfScene {
       props.filter((prop): prop is THREE.Object3D => prop !== null).forEach((prop) => {
         this.scene.add(prop);
         this.shelfPropObjects.push(prop);
+        this.registerObstacle(prop);
       });
     } catch (err) {
       console.warn('Failed to load shelf prop:', err);
@@ -1303,6 +1356,7 @@ export class Ps1ShelfScene {
       if (!transform) return;
       gameCase.group.position.set(transform.x, transform.y, transform.z);
       gameCase.group.rotation.y = transform.rotationY;
+      this.registerObstacle(gameCase.group);
     });
   }
 
@@ -1356,10 +1410,13 @@ export class Ps1ShelfScene {
       gameCase.group.position.y = baseTransform.y;
       gameCase.group.position.z = baseTransform.z + nextProgress * this.selectionOffsetZ;
       gameCase.group.rotation.y = baseTransform.rotationY + nextProgress * (this.spinAngles[index] ?? 0);
+      if (isSelected || currentProgress > 0.001) this.registerObstacle(gameCase.group);
     });
   }
 
   private updateCameraFocus(deltaSeconds: number) {
+    // Mouse-look owns the camera in Navigate View. Never overwrite its quaternion.
+    if (this.cameraMode === 'navigate') return;
     if (this.selectedIndex !== null) {
       const selectedCase = this.cases[this.selectedIndex];
       if (selectedCase) {
@@ -1369,9 +1426,6 @@ export class Ps1ShelfScene {
         this.cameraDesiredPosition.y += this.selectedCameraYOffset;
         this.cameraDesiredPosition.z += this.selectedCameraDistance;
       }
-    } else {
-      this.cameraDesiredPosition.copy(this.freeCameraPosition);
-      this.cameraDesiredTarget.copy(this.freeCameraTarget);
     }
 
     this.camera.position.x = THREE.MathUtils.damp(
@@ -1424,7 +1478,7 @@ export class Ps1ShelfScene {
     const animate = () => {
       this.frameId = requestAnimationFrame(animate);
       const now = performance.now();
-      const deltaSeconds = (now - this.lastFrameTime) / 1000;
+      const deltaSeconds = Math.min((now - this.lastFrameTime) / 1000, 0.05);
       this.lastFrameTime = now;
       this.updateCameraMovement(deltaSeconds);
       this.updateViewAnimation();
@@ -1436,114 +1490,185 @@ export class Ps1ShelfScene {
   }
 
   //region Cleanup and generic utilities
-  private onKeyDown(event: KeyboardEvent) {
-    const key = this.mapMovementKey(event.key);
-    if (!key || this.isTypingTarget(event.target)) return;
-
-    if (this.selectedIndex !== null) {
-      this.releaseSelectionToCurrentCamera();
+  /** Called from a click so the browser can grant pointer lock. */
+  async startNavigation() {
+    if (this.isDestroyed || this.lockRequested || !this.navigationInitialized || this.trackedPendingLoads > 0) return;
+    if (this.cameraMode === 'inspect') this.exitInspection();
+    if (document.pointerLockElement === this.renderer.domElement) return;
+    this.ensureSafeNavigationPosition();
+    if (!this.navigation.isFree(this.freeCameraPosition)) return;
+    this.navigationError = '';
+    this.lockRequested = true;
+    this.renderer.domElement.focus({ preventScroll: true });
+    try {
+      if (!this.renderer.domElement.requestPointerLock) {
+        throw new Error('Pointer lock is unavailable.');
+      }
+      // Use the DOM method directly to catch promise rejections as well as the
+      // pointerlockerror event; Three's lock() does not return that promise.
+      await this.renderer.domElement.requestPointerLock();
+    } catch {
+      this.onPointerLockError();
     }
+  }
 
+  private dispatchNavigationChange() {
+    if (this.isDestroyed) return;
+    this.container.dispatchEvent(new CustomEvent<Ps1NavigationChangeDetail>(PS1_NAVIGATION_CHANGE_EVENT, {
+      detail: {
+        locked: document.pointerLockElement === this.renderer.domElement,
+        mode: this.cameraMode,
+        error: this.navigationError
+      }
+    }));
+  }
+
+  private onPointerLockChange = () => {
+    this.lockRequested = false;
+    this.pressedKeys.clear();
+    this.dispatchNavigationChange();
+  };
+
+  private onPointerLockError = () => {
+    this.lockRequested = false;
+    this.navigationError = 'Mouse capture was unavailable. Click to try again, or select a game with the pointer.';
+    this.dispatchNavigationChange();
+  };
+
+  private pauseNavigation = () => {
+    this.pressedKeys.clear();
+    if (document.pointerLockElement === this.renderer.domElement) this.controls.unlock();
+  };
+
+  private onVisibilityChange = () => {
+    if (document.hidden) this.pauseNavigation();
+  };
+
+  private onKeyDown(event: KeyboardEvent) {
+    if (this.isTypingTarget(event.target) || event.ctrlKey || event.metaKey || event.altKey) return;
+    const key = this.mapMovementKey(event.code);
+    if (this.cameraMode === 'inspect') {
+      // Keep the existing keyboard exit until Inspect View gains game cycling.
+      if (event.target === this.renderer.domElement && (key || event.key === 'Escape')) {
+        event.preventDefault();
+        this.exitInspection();
+      }
+      return;
+    }
+    if (!key || !this.controls.isLocked) return;
     this.pressedKeys.add(key);
     event.preventDefault();
   }
 
   private onKeyUp(event: KeyboardEvent) {
-    const key = this.mapMovementKey(event.key);
-    if (!key) return;
-    this.pressedKeys.delete(key);
+    const key = this.mapMovementKey(event.code);
+    if (key) this.pressedKeys.delete(key);
   }
 
-  private mapMovementKey(key: string) {
-    const normalized = key.toLowerCase();
-    if (normalized === 'arrowup' || normalized === 'w') return 'up';
-    if (normalized === 'arrowdown' || normalized === 's') return 'down';
-    if (normalized === 'arrowleft' || normalized === 'a') return 'left';
-    if (normalized === 'arrowright' || normalized === 'd') return 'right';
+  private mapMovementKey(code: string) {
+    if (code === 'KeyW') return 'up';
+    if (code === 'KeyS') return 'down';
+    if (code === 'KeyA') return 'left';
+    if (code === 'KeyD') return 'right';
     return null;
   }
 
   private isTypingTarget(target: EventTarget | null) {
     if (!(target instanceof HTMLElement)) return false;
-    const tag = target.tagName;
-    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
+    return Boolean(target.closest('input, textarea, select, button, a, [contenteditable="true"]'));
   }
 
   private updateCameraMovement(deltaSeconds: number) {
-    if (this.selectedIndex !== null || !this.pressedKeys.size) return;
+    if (this.cameraMode !== 'navigate' || !this.controls.isLocked || !this.pressedKeys.size) return;
+    const sideways = (this.pressedKeys.has('right') ? 1 : 0) - (this.pressedKeys.has('left') ? 1 : 0);
+    const forward = (this.pressedKeys.has('up') ? 1 : 0) - (this.pressedKeys.has('down') ? 1 : 0);
+    if (!sideways && !forward) return;
 
-    const direction = new THREE.Vector2(
-      (this.pressedKeys.has('right') ? 1 : 0) - (this.pressedKeys.has('left') ? 1 : 0),
-      (this.pressedKeys.has('up') ? 1 : 0) - (this.pressedKeys.has('down') ? 1 : 0)
-    );
-
-    if (!direction.lengthSq()) return;
-
-    direction.normalize().multiplyScalar(this.cameraMoveSpeed * deltaSeconds);
-
-    const maxY = (this.shelfBounds?.max.y ?? this.caseHeight * 2) + 2;
-    this.freeCameraPosition.x += direction.x;
-    this.freeCameraPosition.y = THREE.MathUtils.clamp(this.freeCameraPosition.y + direction.y, 0.6, Math.max(3.5, maxY));
-    this.freeCameraTarget.x += direction.x;
-    this.freeCameraTarget.y = THREE.MathUtils.clamp(this.freeCameraTarget.y + direction.y, 0.2, Math.max(2.9, maxY - 0.5));
+    this.camera.getWorldDirection(this.movementForward);
+    this.movementForward.y = 0;
+    this.movementForward.normalize();
+    this.movementRight.crossVectors(this.movementForward, this.camera.up).normalize();
+    this.movementDelta.copy(this.movementForward).multiplyScalar(forward)
+      .addScaledVector(this.movementRight, sideways).normalize()
+      .multiplyScalar(this.cameraMoveSpeed * deltaSeconds);
+    this.navigation.move(this.freeCameraPosition, this.movementDelta);
+    this.camera.position.copy(this.freeCameraPosition);
   }
 
   private onWheel(event: WheelEvent) {
+    if (!this.controls.isLocked && this.cameraMode !== 'inspect') return;
     event.preventDefault();
-
-    if (this.selectedIndex !== null) {
-      this.selectedCameraDistance = THREE.MathUtils.clamp(
-        this.selectedCameraDistance + event.deltaY * this.cameraZoomSpeed,
-        this.selectedCameraMinDistance,
-        this.selectedCameraMaxDistance
-      );
-      return;
-    }
-
-    const cameraOffset = this.freeCameraPosition.clone().sub(this.freeCameraTarget);
-    const currentDistance = cameraOffset.length();
-    if (!currentDistance) return;
-
-    const nextDistance = THREE.MathUtils.clamp(
-      currentDistance + event.deltaY * this.cameraZoomSpeed,
-      this.cameraMinDistance,
-      this.cameraMaxDistance
-    );
-
-    cameraOffset.setLength(nextDistance);
-    this.freeCameraPosition.copy(this.freeCameraTarget.clone().add(cameraOffset));
+    const pixels = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.container.clientHeight : 1);
+    // Optical zoom leaves the collision-resolved player position unchanged.
+    this.camera.fov = THREE.MathUtils.clamp(this.camera.fov + pixels * 0.025, 25, 70);
+    this.camera.updateProjectionMatrix();
   }
 
+  private onContextMenu = (event: MouseEvent) => {
+    if (!this.controls.isLocked && this.cameraMode !== 'inspect') return;
+    event.preventDefault();
+    this.camera.fov = this.defaultFov;
+    this.camera.updateProjectionMatrix();
+  };
+
   private onClick(event: MouseEvent) {
-    const rect = this.renderer.domElement.getBoundingClientRect();
-    this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    this.raycaster.setFromCamera(this.pointer, this.camera);
-
-    const intersections = this.raycaster.intersectObjects(this.cases.map((gameCase) => gameCase.group), true);
-    const hit = intersections
-      .map((intersection) => this.getCaseIndexFromObject(intersection.object))
-      .find((index): index is number => index !== null);
-
-    if (hit !== undefined && hit !== null) {
-      this.dispatchGamePress(hit);
+    if (event.button !== 0 || this.trackedPendingLoads > 0) return;
+    if (this.cameraMode === 'navigate' && !this.controls.isLocked && !this.navigationError) {
+      void this.startNavigation();
+      return;
     }
-    this.setSelectedIndex(hit ?? null);
+    this.renderer.domElement.focus({ preventScroll: true });
+    if (this.controls.isLocked) {
+      this.pointer.set(0, 0);
+    } else {
+      // Keep ordinary picking available while inspecting or if capture fails.
+      const rect = this.renderer.domElement.getBoundingClientRect();
+      this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    }
+    this.scene.updateMatrixWorld(true);
+    this.camera.updateMatrixWorld(true);
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const pickObjects: THREE.Object3D[] = this.cases.map((gameCase) => gameCase.group);
+    if (this.shelfObject) pickObjects.push(this.shelfObject);
+    if (this.roomGroup) pickObjects.push(this.roomGroup);
+    pickObjects.push(...this.shelfPropObjects);
+    // The nearest visible surface decides selection, including furniture occlusion.
+    const intersection = this.raycaster.intersectObjects(pickObjects, true)[0];
+    const hit = intersection ? this.getCaseIndexFromObject(intersection.object) : null;
+    if (hit !== null) {
+      this.setSelectedIndex(hit);
+      this.dispatchGamePress(hit);
+    } else if (this.cameraMode === 'inspect') {
+      this.exitInspection();
+    }
   }
 
   private setSelectedIndex(index: number | null) {
     if (this.selectedIndex === index) return;
-    this.selectedIndex = index;
-    if (index !== null) {
-      this.selectedCameraDistance = this.selectedCameraDefaultDistance;
+    if (index !== null && this.cameraMode === 'navigate') {
+      this.freeCameraPosition.copy(this.camera.position);
+      this.navigationOrientation.copy(this.camera.quaternion);
+      this.camera.getWorldDirection(this.cameraTarget).add(this.camera.position);
+      this.cameraMode = 'inspect';
+      this.controls.enabled = false;
+      this.pauseNavigation();
     }
+    this.selectedIndex = index;
+    if (index !== null) this.selectedCameraDistance = this.selectedCameraDefaultDistance;
     this.dispatchSelectionChange();
+    this.dispatchNavigationChange();
   }
 
-  private releaseSelectionToCurrentCamera() {
-    this.freeCameraPosition.copy(this.camera.position);
-    this.freeCameraTarget.copy(this.cameraTarget);
+  exitInspection() {
+    if (this.cameraMode !== 'inspect') return;
+    this.cameraMode = 'navigate';
+    this.controls.enabled = true;
+    this.pressedKeys.clear();
     this.setSelectedIndex(null);
+    this.ensureSafeNavigationPosition();
+    this.camera.position.copy(this.freeCameraPosition);
+    this.camera.quaternion.copy(this.navigationOrientation);
   }
 
   private dispatchSelectionChange() {
@@ -1577,7 +1702,6 @@ export class Ps1ShelfScene {
     if (clientWidth === 0 || clientHeight === 0) return;
     this.camera.aspect = clientWidth / clientHeight;
     this.camera.updateProjectionMatrix();
-    this.updateFreeCameraFrame();
     this.renderer.setSize(clientWidth, clientHeight);
     this.postProcessing.setSize(clientWidth, clientHeight, this.renderer.getPixelRatio());
   }
@@ -1585,6 +1709,8 @@ export class Ps1ShelfScene {
   destroy() {
     // Cleanup GPU resources and DOM when the view unmounts.
     this.isDestroyed = true;
+    this.pauseNavigation();
+    this.controls.dispose();
     this.shelfLoadVersion += 1;
     if (this.frameId) cancelAnimationFrame(this.frameId);
     window.removeEventListener('resize', this.onResize);
@@ -1592,6 +1718,11 @@ export class Ps1ShelfScene {
     window.removeEventListener('keyup', this.onKeyUp);
     this.renderer.domElement.removeEventListener('wheel', this.onWheel);
     this.renderer.domElement.removeEventListener('click', this.onClick);
+    this.renderer.domElement.removeEventListener('contextmenu', this.onContextMenu);
+    document.removeEventListener('pointerlockchange', this.onPointerLockChange);
+    document.removeEventListener('pointerlockerror', this.onPointerLockError);
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
+    window.removeEventListener('blur', this.pauseNavigation);
     this.clearShelf();
     this.clearCases();
     this.backgroundTexture?.dispose();
@@ -1604,6 +1735,7 @@ export class Ps1ShelfScene {
 
   private clearCases() {
     for (const gameCase of this.cases) {
+      this.navigation.removeObstacle(gameCase.group);
       this.scene.remove(gameCase.group);
       gameCase.dispose();
     }
@@ -1629,6 +1761,7 @@ export class Ps1ShelfScene {
 
   private clearRoom() {
     this.roomLoadVersion += 1;
+    this.navigation.clear();
     if (!this.roomGroup) return;
 
     this.scene.remove(this.roomGroup);
@@ -1646,6 +1779,7 @@ export class Ps1ShelfScene {
 
   private clearShelfProps() {
     for (const object of this.shelfPropObjects) {
+      this.navigation.removeObstacle(object);
       this.scene.remove(object);
       this.disposeObjectResources(object);
     }
