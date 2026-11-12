@@ -6,6 +6,8 @@ import { GameCase } from './GameCase';
 import { loadTexture } from './materials';
 import { Ps1PostProcessing } from './Ps1PostProcessing';
 import { Ps1Navigation } from './Ps1Navigation';
+import { getInspectionFrame } from './Ps1Inspection';
+import { pickVisibleGame } from './Ps1Picking';
 import bookshelfUrl from '../../assets/bookshelf.glb?url';
 import gameBoyColorUrl from '../../assets/game_boy_color.glb?url';
 import nokiaUrl from '../../assets/nokia_6230.glb?url';
@@ -53,8 +55,10 @@ export type ShelfLoadingProgressDetail = {
 };
 export const PS1_LOADING_PROGRESS_EVENT = 'ps1-loading-progress';
 export type Ps1CameraMode = 'navigate' | 'inspect';
-export type Ps1NavigationChangeDetail = { locked: boolean; mode: Ps1CameraMode; error: string };
+export type Ps1NavigationChangeDetail = { locked: boolean; mode: Ps1CameraMode; returning: boolean; error: string };
 export const PS1_NAVIGATION_CHANGE_EVENT = 'ps1-navigation-change';
+export type ShelfHoverChangeDetail = { game: ShelfGame | null };
+export const PS1_HOVER_CHANGE_EVENT = 'ps1-hover-change';
 
 type CaseTransform = {
   x: number;
@@ -100,6 +104,10 @@ export class Ps1ShelfScene {
   private controls: PointerLockControls;
   private cameraMode: Ps1CameraMode = 'navigate';
   private navigationOrientation = new THREE.Quaternion();
+  private inspectionFrame: ReturnType<typeof getInspectionFrame> | null = null;
+  private returnAnimation: { position: THREE.Vector3; orientation: THREE.Quaternion; elapsed: number } | null = null;
+  private readonly returnDuration = 0.65;
+  private caseRotation = new THREE.Quaternion();
   private navigationInitialized = false;
   private navigationError = '';
   private lockRequested = false;
@@ -108,6 +116,11 @@ export class Ps1ShelfScene {
   private movementDelta = new THREE.Vector3();
   private raycaster = new THREE.Raycaster();
   private pointer = new THREE.Vector2();
+  private pointerClient = new THREE.Vector2();
+  private pointerInside = false;
+  private hoveredIndex: number | null = null;
+  private hoverElapsed = 0;
+  private resizeObserver: ResizeObserver;
   private cameraTarget = new THREE.Vector3(0, 0.6, 0);
   private freeCameraPosition = new THREE.Vector3(0, 1.2, 4);
   private cameraDesiredPosition = new THREE.Vector3(0, 1.2, 4);
@@ -146,9 +159,6 @@ export class Ps1ShelfScene {
   private readonly cameraFocusDamping = 8;
   private readonly cameraMoveSpeed = 2.4;
   private readonly defaultFov = 45;
-  private get selectedCameraYOffset() { return 0.1 * this.shelfContentScale; }
-  private get selectedCameraDefaultDistance() { return 2.1 * this.shelfContentScale; }
-  private selectedCameraDistance = 2.1;
   private readonly showShelfDebug = false;
   private readonly roomDepth = 9.5;
   private readonly roomMinWidth = 11;
@@ -161,7 +171,6 @@ export class Ps1ShelfScene {
   private get caseWidth() { return 0.87 * this.shelfContentScale; }
   private get caseHeight() { return 0.94 * this.shelfContentScale; }
   private get caseDepth() { return 0.13 * this.shelfContentScale; }
-  private get selectionOffsetZ() { return 0.8 * this.shelfContentScale; }
   private readonly selectionProgressDamping = 10;
   private readonly selectionSpinSpeed = Math.PI * 0.5;
   private get shelfCaseXPadding() { return 0.03 * this.shelfContentScale; }
@@ -205,7 +214,7 @@ export class Ps1ShelfScene {
     pmrem.dispose();
     this.container.appendChild(this.renderer.domElement);
     this.renderer.domElement.tabIndex = 0;
-    this.renderer.domElement.setAttribute('aria-label', 'PS1 room. Click to navigate with WASD and mouse. Escape releases the mouse.');
+    this.renderer.domElement.setAttribute('aria-label', 'PS1 room. Click to navigate with WASD and mouse. C toggles crouching. Escape releases the mouse.');
     this.controls = new PointerLockControls(this.camera, this.renderer.domElement);
     this.controls.minPolarAngle = 0.1;
     this.controls.maxPolarAngle = Math.PI - 0.1;
@@ -234,11 +243,15 @@ export class Ps1ShelfScene {
     this.onKeyUp = this.onKeyUp.bind(this);
     this.onWheel = this.onWheel.bind(this);
     this.onClick = this.onClick.bind(this);
+    this.resizeObserver = new ResizeObserver(() => this.onResize());
+    this.resizeObserver.observe(this.container);
     window.addEventListener('resize', this.onResize);
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     this.renderer.domElement.addEventListener('wheel', this.onWheel, { passive: false });
     this.renderer.domElement.addEventListener('click', this.onClick);
+    this.renderer.domElement.addEventListener('pointermove', this.onPointerMove);
+    this.renderer.domElement.addEventListener('pointerleave', this.onPointerLeave);
     this.renderer.domElement.addEventListener('contextmenu', this.onContextMenu);
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
     document.addEventListener('pointerlockerror', this.onPointerLockError);
@@ -679,6 +692,7 @@ export class Ps1ShelfScene {
       object.name = config.label;
       group.add(object);
       this.registerObstacle(object);
+      if (config.label === 'crt-tv' && this.cameraMode === 'inspect') this.updateInspectionFrame();
       return object;
     } catch (err) {
       console.warn(`Failed to load room model: ${config.filename}`, err);
@@ -981,7 +995,7 @@ export class Ps1ShelfScene {
   private setShelfContentScale(scale: number) {
     this.shelfContentScale = scale;
     this.cases.forEach((gameCase) => gameCase.group.scale.setScalar(scale));
-    this.selectedCameraDistance = this.selectedCameraDefaultDistance;
+    if (this.cameraMode === 'inspect') this.updateInspectionFrame();
     this.viewAnimation = null;
   }
 
@@ -1075,7 +1089,7 @@ export class Ps1ShelfScene {
       return;
     }
     this.freeCameraPosition.copy(safe);
-    if (this.cameraMode === 'navigate') {
+    if (this.cameraMode === 'navigate' && !this.returnAnimation) {
       this.camera.position.copy(safe);
     }
   }
@@ -1384,88 +1398,79 @@ export class Ps1ShelfScene {
     }
   }
 
-  private updateSelectionAnimation(deltaSeconds: number) {
-    this.cases.forEach((gameCase, index) => {
-      const baseTransform = this.baseTransforms[index];
-      if (!baseTransform) return;
-
-      const isSelected = this.selectedIndex === index;
-      const currentProgress = this.selectionProgress[index] ?? 0;
-      const nextProgress = THREE.MathUtils.damp(
-        currentProgress,
-        isSelected ? 1 : 0,
-        this.selectionProgressDamping,
-        deltaSeconds
+  private updateInspectionFrame() {
+    if (!this.shelfBounds) return;
+    const tv = this.roomGroup?.getObjectByName('crt-tv');
+    let bounds: THREE.Box3;
+    if (tv) {
+      tv.updateWorldMatrix(true, true);
+      bounds = new THREE.Box3().setFromObject(tv);
+    } else {
+      // Keep inspection usable when the optional TV model fails to load.
+      const stand = this.getTvStandMetrics(this.getRoomMetrics());
+      bounds = new THREE.Box3().setFromCenterAndSize(
+        new THREE.Vector3(stand.centerX, stand.height + 0.55, stand.centerZ),
+        new THREE.Vector3(1.25, 1.1, 0.8)
       );
+    }
+    this.inspectionFrame = getInspectionFrame(
+      bounds, new THREE.Vector3(this.caseWidth, this.caseHeight, this.caseDepth),
+      this.camera.aspect, this.defaultFov
+    );
+  }
 
-      this.selectionProgress[index] = nextProgress;
+  private updateSelectionAnimation(deltaSeconds: number) {
+    const rotationBlend = 1 - Math.exp(-this.selectionProgressDamping * deltaSeconds);
+    this.cases.forEach((gameCase, index) => {
+      const base = this.baseTransforms[index];
+      if (!base) return;
+      const selected = this.selectedIndex === index;
+      const previous = this.selectionProgress[index] ?? 0;
+      if (!selected && previous === 0) return;
+      let progress = THREE.MathUtils.damp(previous, selected ? 1 : 0, this.selectionProgressDamping, deltaSeconds);
+      if (!selected && progress < 0.001) progress = 0;
+      this.selectionProgress[index] = progress;
 
-      if (isSelected) {
-        this.spinAngles[index] = (this.spinAngles[index] ?? 0) + this.selectionSpinSpeed * deltaSeconds;
-      } else if (nextProgress < 0.001) {
-        this.spinAngles[index] = 0;
+      if (selected) {
+        this.spinAngles[index] = ((this.spinAngles[index] ?? 0) + this.selectionSpinSpeed * deltaSeconds) % (Math.PI * 2);
       }
-
-      gameCase.group.position.x = baseTransform.x;
-      gameCase.group.position.y = baseTransform.y;
-      gameCase.group.position.z = baseTransform.z + nextProgress * this.selectionOffsetZ;
-      gameCase.group.rotation.y = baseTransform.rotationY + nextProgress * (this.spinAngles[index] ?? 0);
-      if (isSelected || currentProgress > 0.001) this.registerObstacle(gameCase.group);
+      const target = this.inspectionFrame?.casePosition;
+      gameCase.group.position.set(base.x, base.y, base.z);
+      if (target) gameCase.group.position.lerp(target, progress);
+      this.caseRotation.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, selected ? this.spinAngles[index] : base.rotationY);
+      gameCase.group.quaternion.slerp(this.caseRotation, rotationBlend);
+      if (progress === 0) {
+        gameCase.group.quaternion.copy(this.caseRotation);
+        this.spinAngles[index] = 0;
+        this.registerObstacle(gameCase.group);
+      } else {
+        // Presentation animations must not push the saved player position around.
+        this.navigation.removeObstacle(gameCase.group);
+      }
     });
   }
 
   private updateCameraFocus(deltaSeconds: number) {
-    // Mouse-look owns the camera in Navigate View. Never overwrite its quaternion.
-    if (this.cameraMode === 'navigate') return;
-    if (this.selectedIndex !== null) {
-      const selectedCase = this.cases[this.selectedIndex];
-      if (selectedCase) {
-        this.cameraDesiredTarget.copy(selectedCase.group.position);
-        this.cameraDesiredTarget.y = selectedCase.group.position.y;
-        this.cameraDesiredPosition.copy(this.cameraDesiredTarget);
-        this.cameraDesiredPosition.y += this.selectedCameraYOffset;
-        this.cameraDesiredPosition.z += this.selectedCameraDistance;
+    if (this.returnAnimation) {
+      const animation = this.returnAnimation;
+      animation.elapsed += deltaSeconds;
+      const progress = this.easeInOut(Math.min(animation.elapsed / this.returnDuration, 1));
+      this.camera.position.lerpVectors(animation.position, this.freeCameraPosition, progress);
+      this.camera.quaternion.slerpQuaternions(animation.orientation, this.navigationOrientation, progress);
+      if (animation.elapsed >= this.returnDuration) {
+        this.returnAnimation = null;
+        this.controls.enabled = true;
+        this.dispatchNavigationChange();
       }
+      return;
     }
-
-    this.camera.position.x = THREE.MathUtils.damp(
-      this.camera.position.x,
-      this.cameraDesiredPosition.x,
-      this.cameraFocusDamping,
-      deltaSeconds
-    );
-    this.camera.position.y = THREE.MathUtils.damp(
-      this.camera.position.y,
-      this.cameraDesiredPosition.y,
-      this.cameraFocusDamping,
-      deltaSeconds
-    );
-    this.camera.position.z = THREE.MathUtils.damp(
-      this.camera.position.z,
-      this.cameraDesiredPosition.z,
-      this.cameraFocusDamping,
-      deltaSeconds
-    );
-
-    this.cameraTarget.x = THREE.MathUtils.damp(
-      this.cameraTarget.x,
-      this.cameraDesiredTarget.x,
-      this.cameraFocusDamping,
-      deltaSeconds
-    );
-    this.cameraTarget.y = THREE.MathUtils.damp(
-      this.cameraTarget.y,
-      this.cameraDesiredTarget.y,
-      this.cameraFocusDamping,
-      deltaSeconds
-    );
-    this.cameraTarget.z = THREE.MathUtils.damp(
-      this.cameraTarget.z,
-      this.cameraDesiredTarget.z,
-      this.cameraFocusDamping,
-      deltaSeconds
-    );
-
+    // Mouse-look owns the camera in Navigate View. Never overwrite its quaternion.
+    if (this.cameraMode === 'navigate' || !this.inspectionFrame) return;
+    const blend = 1 - Math.exp(-this.cameraFocusDamping * deltaSeconds);
+    this.cameraDesiredPosition.copy(this.inspectionFrame.cameraPosition);
+    this.cameraDesiredTarget.copy(this.inspectionFrame.cameraTarget);
+    this.camera.position.lerp(this.cameraDesiredPosition, blend);
+    this.cameraTarget.lerp(this.cameraDesiredTarget, blend);
     this.camera.lookAt(this.cameraTarget);
   }
 
@@ -1484,6 +1489,7 @@ export class Ps1ShelfScene {
       this.updateViewAnimation();
       this.updateSelectionAnimation(deltaSeconds);
       this.updateCameraFocus(deltaSeconds);
+      this.updateHover(deltaSeconds);
       this.postProcessing.render(deltaSeconds, now / 1000);
     };
     animate();
@@ -1493,7 +1499,11 @@ export class Ps1ShelfScene {
   /** Called from a click so the browser can grant pointer lock. */
   async startNavigation() {
     if (this.isDestroyed || this.lockRequested || !this.navigationInitialized || this.trackedPendingLoads > 0) return;
-    if (this.cameraMode === 'inspect') this.exitInspection();
+    if (this.cameraMode === 'inspect') {
+      this.exitInspection();
+      return;
+    }
+    if (this.returnAnimation) return;
     if (document.pointerLockElement === this.renderer.domElement) return;
     this.ensureSafeNavigationPosition();
     if (!this.navigation.isFree(this.freeCameraPosition)) return;
@@ -1518,6 +1528,7 @@ export class Ps1ShelfScene {
       detail: {
         locked: document.pointerLockElement === this.renderer.domElement,
         mode: this.cameraMode,
+        returning: Boolean(this.returnAnimation),
         error: this.navigationError
       }
     }));
@@ -1526,6 +1537,7 @@ export class Ps1ShelfScene {
   private onPointerLockChange = () => {
     this.lockRequested = false;
     this.pressedKeys.clear();
+    this.setHoveredIndex(null);
     this.dispatchNavigationChange();
   };
 
@@ -1537,6 +1549,7 @@ export class Ps1ShelfScene {
 
   private pauseNavigation = () => {
     this.pressedKeys.clear();
+    this.setHoveredIndex(null);
     if (document.pointerLockElement === this.renderer.domElement) this.controls.unlock();
   };
 
@@ -1545,17 +1558,25 @@ export class Ps1ShelfScene {
   };
 
   private onKeyDown(event: KeyboardEvent) {
-    if (this.isTypingTarget(event.target) || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (this.isTypingTarget(event.target) || event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
     const key = this.mapMovementKey(event.code);
     if (this.cameraMode === 'inspect') {
-      // Keep the existing keyboard exit until Inspect View gains game cycling.
-      if (event.target === this.renderer.domElement && (key || event.key === 'Escape')) {
-        event.preventDefault();
-        this.exitInspection();
+      if (event.target !== this.renderer.domElement || event.key === 'Tab') return;
+      event.preventDefault();
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') this.cycleSelection(-1);
+      else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') this.cycleSelection(1);
+      else this.exitInspection();
+      return;
+    }
+    if (!this.controls.isLocked || this.returnAnimation) return;
+    if (event.code === 'KeyC') {
+      event.preventDefault();
+      if (!event.repeat && this.navigation.toggleCrouch(this.freeCameraPosition)) {
+        this.camera.position.copy(this.freeCameraPosition);
       }
       return;
     }
-    if (!key || !this.controls.isLocked) return;
+    if (!key) return;
     this.pressedKeys.add(key);
     event.preventDefault();
   }
@@ -1579,7 +1600,7 @@ export class Ps1ShelfScene {
   }
 
   private updateCameraMovement(deltaSeconds: number) {
-    if (this.cameraMode !== 'navigate' || !this.controls.isLocked || !this.pressedKeys.size) return;
+    if (this.cameraMode !== 'navigate' || this.returnAnimation || !this.controls.isLocked || !this.pressedKeys.size) return;
     const sideways = (this.pressedKeys.has('right') ? 1 : 0) - (this.pressedKeys.has('left') ? 1 : 0);
     const forward = (this.pressedKeys.has('up') ? 1 : 0) - (this.pressedKeys.has('down') ? 1 : 0);
     if (!sideways && !forward) return;
@@ -1612,7 +1633,7 @@ export class Ps1ShelfScene {
   };
 
   private onClick(event: MouseEvent) {
-    if (event.button !== 0 || this.trackedPendingLoads > 0) return;
+    if (event.button !== 0 || this.returnAnimation || this.trackedPendingLoads > 0) return;
     if (this.cameraMode === 'navigate' && !this.controls.isLocked && !this.navigationError) {
       void this.startNavigation();
       return;
@@ -1622,30 +1643,76 @@ export class Ps1ShelfScene {
       this.pointer.set(0, 0);
     } else {
       // Keep ordinary picking available while inspecting or if capture fails.
-      const rect = this.renderer.domElement.getBoundingClientRect();
-      this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      this.updatePointer(event.clientX, event.clientY);
     }
+    const hit = this.pickGame();
+    if (hit !== null) this.selectGame(hit);
+  }
+
+  private updatePointer(clientX: number, clientY: number) {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+  }
+
+  private onPointerMove = (event: PointerEvent) => {
+    if (event.pointerType === 'touch') return;
+    this.pointerClient.set(event.clientX, event.clientY);
+    this.pointerInside = true;
+  };
+
+  private onPointerLeave = () => {
+    this.pointerInside = false;
+    this.setHoveredIndex(null);
+  };
+
+  private updateHover(deltaSeconds: number) {
+    const canPick = !this.returnAnimation && this.trackedPendingLoads === 0 &&
+      (this.controls.isLocked || (this.pointerInside && (this.cameraMode === 'inspect' || Boolean(this.navigationError))));
+    if (!canPick) {
+      this.setHoveredIndex(null);
+      return;
+    }
+    this.hoverElapsed += deltaSeconds;
+    if (this.hoverElapsed < 0.05) return;
+    this.hoverElapsed = 0;
+    if (this.controls.isLocked) this.pointer.set(0, 0);
+    else this.updatePointer(this.pointerClient.x, this.pointerClient.y);
+    this.setHoveredIndex(this.pickGame());
+  }
+
+  private setHoveredIndex(index: number | null) {
+    if (index === this.hoveredIndex) return;
+    this.hoveredIndex = index;
+    this.container.dispatchEvent(new CustomEvent<ShelfHoverChangeDetail>(PS1_HOVER_CHANGE_EVENT, {
+      detail: { game: index === null ? null : this.shelfGames[index] ?? null }
+    }));
+  }
+
+  private pickGame() {
     this.scene.updateMatrixWorld(true);
     this.camera.updateMatrixWorld(true);
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    const pickObjects: THREE.Object3D[] = this.cases.map((gameCase) => gameCase.group);
-    if (this.shelfObject) pickObjects.push(this.shelfObject);
-    if (this.roomGroup) pickObjects.push(this.roomGroup);
-    pickObjects.push(...this.shelfPropObjects);
-    // The nearest visible surface decides selection, including furniture occlusion.
-    const intersection = this.raycaster.intersectObjects(pickObjects, true)[0];
-    const hit = intersection ? this.getCaseIndexFromObject(intersection.object) : null;
-    if (hit !== null) {
-      this.setSelectedIndex(hit);
-      this.dispatchGamePress(hit);
-    } else if (this.cameraMode === 'inspect') {
-      this.exitInspection();
-    }
+    const blockers = [...this.shelfPropObjects];
+    if (this.shelfObject) blockers.push(this.shelfObject);
+    if (this.roomGroup) blockers.push(this.roomGroup);
+    const hit = pickVisibleGame(this.raycaster, this.cases.map((gameCase) => gameCase.group), blockers);
+    return this.cameraMode === 'inspect' && hit !== this.selectedIndex ? null : hit;
+  }
+
+  private selectGame(index: number) {
+    if (this.returnAnimation || !this.cases[index]) return;
+    this.setSelectedIndex(index);
+    this.dispatchGamePress(index);
+  }
+
+  cycleSelection(direction: -1 | 1) {
+    if (this.cameraMode !== 'inspect' || this.selectedIndex === null || this.cases.length < 2) return;
+    this.selectGame((this.selectedIndex + direction + this.cases.length) % this.cases.length);
   }
 
   private setSelectedIndex(index: number | null) {
     if (this.selectedIndex === index) return;
+    this.setHoveredIndex(null);
     if (index !== null && this.cameraMode === 'navigate') {
       this.freeCameraPosition.copy(this.camera.position);
       this.navigationOrientation.copy(this.camera.quaternion);
@@ -1653,22 +1720,24 @@ export class Ps1ShelfScene {
       this.cameraMode = 'inspect';
       this.controls.enabled = false;
       this.pauseNavigation();
+      this.updateInspectionFrame();
     }
     this.selectedIndex = index;
-    if (index !== null) this.selectedCameraDistance = this.selectedCameraDefaultDistance;
+    if (index !== null) this.navigation.removeObstacle(this.cases[index].group);
     this.dispatchSelectionChange();
     this.dispatchNavigationChange();
   }
 
   exitInspection() {
     if (this.cameraMode !== 'inspect') return;
+    this.returnAnimation = {
+      position: this.camera.position.clone(), orientation: this.camera.quaternion.clone(), elapsed: 0
+    };
     this.cameraMode = 'navigate';
-    this.controls.enabled = true;
     this.pressedKeys.clear();
     this.setSelectedIndex(null);
     this.ensureSafeNavigationPosition();
-    this.camera.position.copy(this.freeCameraPosition);
-    this.camera.quaternion.copy(this.navigationOrientation);
+    this.renderer.domElement.focus({ preventScroll: true });
   }
 
   private dispatchSelectionChange() {
@@ -1687,21 +1756,13 @@ export class Ps1ShelfScene {
     }));
   }
 
-  private getCaseIndexFromObject(object: THREE.Object3D | null) {
-    let current: THREE.Object3D | null = object;
-    while (current) {
-      if (typeof current.userData.caseIndex === 'number') return current.userData.caseIndex;
-      current = current.parent;
-    }
-    return null;
-  }
-
   private onResize() {
     // Resize handler to keep the aspect ratio correct.
     const { clientWidth, clientHeight } = this.container;
     if (clientWidth === 0 || clientHeight === 0) return;
     this.camera.aspect = clientWidth / clientHeight;
     this.camera.updateProjectionMatrix();
+    if (this.cameraMode === 'inspect') this.updateInspectionFrame();
     this.renderer.setSize(clientWidth, clientHeight);
     this.postProcessing.setSize(clientWidth, clientHeight, this.renderer.getPixelRatio());
   }
@@ -1711,6 +1772,7 @@ export class Ps1ShelfScene {
     this.isDestroyed = true;
     this.pauseNavigation();
     this.controls.dispose();
+    this.resizeObserver.disconnect();
     this.shelfLoadVersion += 1;
     if (this.frameId) cancelAnimationFrame(this.frameId);
     window.removeEventListener('resize', this.onResize);
@@ -1718,6 +1780,8 @@ export class Ps1ShelfScene {
     window.removeEventListener('keyup', this.onKeyUp);
     this.renderer.domElement.removeEventListener('wheel', this.onWheel);
     this.renderer.domElement.removeEventListener('click', this.onClick);
+    this.renderer.domElement.removeEventListener('pointermove', this.onPointerMove);
+    this.renderer.domElement.removeEventListener('pointerleave', this.onPointerLeave);
     this.renderer.domElement.removeEventListener('contextmenu', this.onContextMenu);
     document.removeEventListener('pointerlockchange', this.onPointerLockChange);
     document.removeEventListener('pointerlockerror', this.onPointerLockError);
@@ -1734,6 +1798,7 @@ export class Ps1ShelfScene {
   }
 
   private clearCases() {
+    this.setHoveredIndex(null);
     for (const gameCase of this.cases) {
       this.navigation.removeObstacle(gameCase.group);
       this.scene.remove(gameCase.group);

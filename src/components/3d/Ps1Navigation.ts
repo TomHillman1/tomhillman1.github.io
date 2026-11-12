@@ -3,15 +3,33 @@ import { Box3, Vector3 } from 'three';
 /** Static room collisions for a grounded player. Positions refer to eye level. */
 export class Ps1Navigation {
   readonly radius: number;
-  readonly eyeHeight: number;
-  private readonly bodyHeight: number;
+  private readonly standingEyeHeight: number;
+  private crouched = false;
   private room: Box3 | null = null;
   private obstacles = new Map<object, Box3>();
 
   constructor(radius: number, eyeHeight: number) {
     this.radius = radius;
-    this.eyeHeight = eyeHeight;
-    this.bodyHeight = eyeHeight + radius;
+    this.standingEyeHeight = eyeHeight;
+  }
+
+  get eyeHeight() {
+    return this.standingEyeHeight * (this.crouched ? 0.6 : 1);
+  }
+
+  private get bodyHeight() {
+    return this.eyeHeight + this.radius;
+  }
+
+  /** Stay crouched when there is not enough headroom to stand. */
+  toggleCrouch(position: Vector3) {
+    this.crouched = !this.crouched;
+    if (!this.isFree(position)) {
+      this.crouched = !this.crouched;
+      return false;
+    }
+    position.y = this.eyeHeight;
+    return true;
   }
 
   setRoom(bounds: Box3) {

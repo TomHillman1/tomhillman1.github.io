@@ -101,3 +101,32 @@ test('a fully occupied room cannot provide a valid spawn', () => {
   navigation.setObstacle({}, box([-5, 0, -5], [5, 3, 5]));
   assert.equal(navigation.findFreePosition(new Vector3(0, 1.6, 0)), null);
 });
+
+test('crouching toggles eye height and persists while walking and recovering a position', () => {
+  const navigation = room();
+  const position = new Vector3(0, 1.6, 0);
+  assert.equal(navigation.toggleCrouch(position), true);
+  assert.equal(position.y, 0.96);
+  navigation.move(position, new Vector3(1, 0, 0));
+  assert.equal(position.y, 0.96);
+  assert.equal(navigation.findFreePosition(position).y, 0.96);
+  assert.equal(navigation.toggleCrouch(position), true);
+  assert.equal(position.y, 1.6);
+});
+
+test('crouching allows passage under an obstacle but prevents standing inside it', () => {
+  const navigation = room();
+  navigation.setObstacle({}, box([-1, 1.3, -1], [1, 2, 1]));
+  const position = new Vector3(-2, 1.6, 0);
+  navigation.move(position, new Vector3(2, 0, 0));
+  assert.equal(position.x, -1.25);
+  assert.equal(navigation.toggleCrouch(position), true);
+  navigation.move(position, new Vector3(1.25, 0, 0));
+  assert.ok(Math.abs(position.x) < 1e-10);
+  assert.equal(navigation.toggleCrouch(position), false);
+  assert.equal(position.y, 0.96);
+  assert.ok(navigation.isFree(position));
+  navigation.move(position, new Vector3(2, 0, 0));
+  assert.equal(navigation.toggleCrouch(position), true);
+  assert.equal(position.y, 1.6);
+});

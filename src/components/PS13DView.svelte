@@ -3,10 +3,13 @@
   import { getTagSongSignedURL } from '../helpers/api';
   import AudioControl from './AudioControl.svelte';
   import PS1LoadingOverlay from './PS1LoadingOverlay.svelte';
+  import crosshairUrl from '../assets/cursors/ps1-crosshair.svg?url';
+  import handCursorUrl from '../assets/cursors/win98-hand.svg?url';
   import {
     PS1_GAME_PRESS_EVENT,
     PS1_LOADING_PROGRESS_EVENT,
     PS1_NAVIGATION_CHANGE_EVENT,
+    PS1_HOVER_CHANGE_EVENT,
     PS1_SELECTION_CHANGE_EVENT,
     Ps1ShelfScene,
     type ShelfGamePressDetail,
@@ -14,7 +17,7 @@
     type ShelfLoadingProgressDetail,
     type Ps1NavigationChangeDetail,
     type ShelfSelectionChangeDetail,
-    type ShelfView
+    type ShelfHoverChangeDetail
   } from './3d/Ps1ShelfScene';
 
   export let games: ShelfGame[] = [];
@@ -23,9 +26,10 @@
   let container: HTMLDivElement | null = null;
   let viewportEl: HTMLDivElement | null = null;
   let scene: Ps1ShelfScene | null = null;
-  let currentView: ShelfView = 'front';
   let selectedGame: ShelfGame | null = null;
+  let hoveredGame: ShelfGame | null = null;
   let navigationLocked = false;
+  let returningToRoom = false;
   let navigationError = '';
   let loadingActive = true;
   let loadingProgress = 0;
@@ -55,15 +59,15 @@
   function createScene() {
     if (!container || scene) return;
     scene = new Ps1ShelfScene(container, games);
-    currentView = scene.getView();
   }
 
   function destroyScene() {
     scene?.destroy();
     scene = null;
-    currentView = 'front';
     selectedGame = null;
+    hoveredGame = null;
     navigationLocked = false;
+    returningToRoom = false;
     navigationError = '';
     loadingActive = true;
     loadingProgress = 0;
@@ -73,6 +77,18 @@
 
   function pauseMusic() {
     audioEl?.pause();
+  }
+
+  function clearSelectedMusic() {
+    // Invalidate in-flight signing/playback before changing or leaving a game.
+    musicRequestId += 1;
+    musicLoading = false;
+    musicTrackUrl = null;
+    musicTrackGameId = null;
+    musicPlaybackError = '';
+    pauseMusic();
+    audioEl?.removeAttribute('src');
+    audioEl?.load();
   }
 
   async function playCurrentMusic() {
@@ -85,10 +101,12 @@
 
     if (!musicTrackUrl) return;
 
+    const requestId = musicRequestId;
     try {
       musicPlaybackError = '';
       await audioEl.play();
     } catch (err) {
+      if (requestId !== musicRequestId) return;
       musicPlaybackError = 'Playback blocked. Press play to start music.';
       musicPlaying = false;
       console.warn('Failed to play tag song.', err);
@@ -185,7 +203,7 @@
 
     const onSelectionChange = (event: Event) => {
       selectedGame = (event as CustomEvent<ShelfSelectionChangeDetail>).detail.game;
-      if (!selectedGame) pauseMusic();
+      clearSelectedMusic();
     };
     const onGamePress = (event: Event) => {
       const game = (event as CustomEvent<ShelfGamePressDetail>).detail.game;
@@ -201,13 +219,18 @@
     const onNavigationChange = (event: Event) => {
       const detail = (event as CustomEvent<Ps1NavigationChangeDetail>).detail;
       navigationLocked = detail.locked && detail.mode === 'navigate';
+      returningToRoom = detail.returning;
       navigationError = detail.error;
+    };
+    const onHoverChange = (event: Event) => {
+      hoveredGame = (event as CustomEvent<ShelfHoverChangeDetail>).detail.game;
     };
 
     container.addEventListener(PS1_SELECTION_CHANGE_EVENT, onSelectionChange);
     container.addEventListener(PS1_GAME_PRESS_EVENT, onGamePress);
     container.addEventListener(PS1_LOADING_PROGRESS_EVENT, onLoadingProgress);
     container.addEventListener(PS1_NAVIGATION_CHANGE_EVENT, onNavigationChange);
+    container.addEventListener(PS1_HOVER_CHANGE_EVENT, onHoverChange);
     document.addEventListener('fullscreenchange', syncFullscreenState);
     mounted = true;
     syncFullscreenState();
@@ -217,8 +240,9 @@
       container?.removeEventListener(PS1_GAME_PRESS_EVENT, onGamePress);
       container?.removeEventListener(PS1_LOADING_PROGRESS_EVENT, onLoadingProgress);
       container?.removeEventListener(PS1_NAVIGATION_CHANGE_EVENT, onNavigationChange);
+      container?.removeEventListener(PS1_HOVER_CHANGE_EVENT, onHoverChange);
       document.removeEventListener('fullscreenchange', syncFullscreenState);
-      pauseMusic();
+      clearSelectedMusic();
       destroyScene();
     };
   });
@@ -246,7 +270,7 @@
 </script>
 
 <section class="ps1-3d">
-  <div class="viewport" bind:this={viewportEl}>
+  <div class="viewport" class:inspect-mode={Boolean(selectedGame)} bind:this={viewportEl}>
     <PS1LoadingOverlay
       active={overlayActive}
       progress={overlayProgress}
@@ -255,44 +279,74 @@
       statusText={overlayStatusText}
       countText={overlayCountText}
     />
-    <button class="fullscreen-toggle" type="button" on:click={toggleFullscreen}>
-      {isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-    </button>
     {#if !overlayActive}
-      {#if navigationLocked}
-        <div class="navigation-crosshair" aria-hidden="true">+</div>
-        <div class="navigation-hint">WASD to walk · Mouse to look · Esc to release mouse</div>
-      {:else}
-        <div class="navigation-prompt">
-          <button type="button" on:click={() => scene?.startNavigation()}>
-            {selectedGame ? 'Return to room' : 'Click to navigate'}
-          </button>
-          {#if navigationError}
-            <p role="status">{navigationError}</p>
+      <div class="scene-toolbar">
+        <div class="scene-heading" aria-live="polite">
+          <span class="scene-mode">{selectedGame ? 'Inspect View' : 'Navigate View'}</span>
+          {#if selectedGame}
+            <span class="game-title" title={selectedGame.name}>{selectedGame.name}</span>
           {/if}
         </div>
+        <div class="scene-tools">
+          <button class="fullscreen-toggle" type="button" on:click={toggleFullscreen}>
+            {isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+          </button>
+          {#if selectedGame}
+            <button class="inspect-close" type="button" aria-label="Exit Inspect View" title="Return to room" on:click={() => scene?.exitInspection()}>
+              <svg aria-hidden="true" width="14" height="14" viewBox="0 0 7 7" shape-rendering="crispEdges"><path fill="currentColor" d="M0 0h2v1h1v1h1V1h1V0h2v2H6v1H5v1h1v1h1v2H5V6H4V5H3v1H2v1H0V5h1V4h1V3H1V2H0z" /></svg>
+            </button>
+          {/if}
+        </div>
+      </div>
+      {#if navigationLocked}
+        <div class="navigation-crosshair" aria-hidden="true">
+          {#if hoveredGame}
+            <img class="target-hand" src={handCursorUrl} width="36" height="44" alt="" />
+          {:else}
+            <img class="target-cross" src={crosshairUrl} width="28" height="28" alt="" />
+          {/if}
+        </div>
+        {#if hoveredGame}
+          <div class="target-label" role="status"><span>{hoveredGame.name}</span><small>Click to inspect</small></div>
+        {/if}
       {/if}
-    {/if}
-    <AudioControl
-      disabled={!canUseMusicControls}
-      loading={musicLoading}
-      muted={!musicAudible}
-      pauseLabel="Pause tag song"
-      playbackError={musicPlaybackError}
-      placement="bottom-left"
-      playing={musicPlaying}
-      playLabel="Play tag song"
-      muteLabel="Mute tag song"
-      unmuteLabel="Unmute tag song"
-      volume={musicVolume}
-      volumeLabel="Tag song volume"
-      on:toggleplayback={toggleMusicPlayback}
-      on:togglemute={toggleMusicMute}
-      on:volumechange={handleMusicVolumeChange}
-    />
-    {#if selectedGame}
-      <div class="selection-overlay">
-        Game selected: {selectedGame.name}
+      <div class="scene-footer">
+        <div class="audio-panel">
+          <AudioControl
+            disabled={!canUseMusicControls}
+            loading={musicLoading}
+            muted={!musicAudible}
+            pauseLabel="Pause tag song"
+            playbackError={musicPlaybackError}
+            playing={musicPlaying}
+            playLabel="Play tag song"
+            muteLabel="Mute tag song"
+            unmuteLabel="Unmute tag song"
+            volume={musicVolume}
+            volumeLabel="Tag song volume"
+            on:toggleplayback={toggleMusicPlayback}
+            on:togglemute={toggleMusicMute}
+            on:volumechange={handleMusicVolumeChange}
+          />
+        </div>
+        <div class="scene-actions">
+          {#if navigationLocked}
+            <p class="control-hint">WASD to walk &middot; Mouse to look<br />C toggles crouching &middot; Esc releases the mouse</p>
+          {:else if selectedGame}
+            <div class="inspection-buttons">
+              <button type="button" disabled={games.length < 2} on:click={() => scene?.cycleSelection(-1)} aria-label="Inspect previous game">&larr; Previous</button>
+              <button type="button" disabled={games.length < 2} on:click={() => scene?.cycleSelection(1)} aria-label="Inspect next game">Next &rarr;</button>
+            </div>
+            <p class="control-hint inspection-hint">Arrows change game; other keys exit.<br />Tab focuses controls.</p>
+          {:else}
+            <button class="navigation-start" type="button" disabled={returningToRoom} on:click={() => scene?.startNavigation()}>
+              {returningToRoom ? 'Returning to room...' : 'Click to navigate'}
+            </button>
+            {#if navigationError}
+              <p class="navigation-error" role="status">{navigationError}</p>
+            {/if}
+          {/if}
+        </div>
       </div>
     {/if}
     <audio
@@ -300,104 +354,232 @@
       preload="none"
       on:ended={() => musicPlaying = false}
       on:error={() => {
+        if (!selectedGame || !musicTrackUrl) return;
         musicPlaying = false;
         musicPlaybackError = 'Could not play this tag song.';
       }}
       on:pause={() => musicPlaying = false}
       on:play={() => musicPlaying = true}
     ></audio>
-    <div class="stage" bind:this={container}></div>
+    <div class="stage" class:game-hovered={Boolean(hoveredGame)} bind:this={container}></div>
   </div>
 </section>
 
 <style>
   .ps1-3d {
     width: 100%;
+    container-type: inline-size;
   }
   .viewport {
+    --ps1-pointer: url('../assets/cursors/ps1-crosshair.svg') 14 14, crosshair;
+    --ps1-hand: url('../assets/cursors/win98-hand.svg') 12 2, pointer;
     position: relative;
+    container-type: inline-size;
     width: 100%;
     aspect-ratio: 16 / 9;
     border-radius: 12px;
     overflow: hidden;
     background: #000;
+    color: #f6f5ef;
   }
   .viewport:fullscreen {
     width: 100vw;
     height: 100vh;
+    min-height: 0;
     aspect-ratio: auto;
     border-radius: 0;
-  }
-  .fullscreen-toggle {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    z-index: 2;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 999px;
-    background: rgba(0, 0, 0, 0.7);
-    color: #fff;
-    padding: 0.55rem 0.9rem;
-    font-size: 0.72rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    cursor: pointer;
-    backdrop-filter: blur(12px);
-  }
-  .selection-overlay {
-    position: absolute;
-    top: 1rem;
-    left: 1rem;
-    z-index: 1;
-    padding: 0.5rem 0.75rem;
-    border-radius: 6px;
-    background: rgba(17, 24, 39, 0.85);
-    color: #fff;
-    pointer-events: none;
   }
   .stage {
     width: 100%;
     height: 100%;
   }
+  .stage :global(canvas) {
+    display: block;
+  }
+  .viewport.inspect-mode {
+    cursor: var(--ps1-pointer);
+  }
+  .viewport.inspect-mode :global(button:not(:disabled)),
+  .viewport.inspect-mode :global(input[type='range']),
+  .stage.game-hovered :global(canvas) {
+    cursor: var(--ps1-hand);
+  }
+  .viewport button {
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    border-radius: 4px;
+    padding: 0.55rem 0.75rem;
+    background: rgba(12, 15, 18, 0.9);
+    color: inherit;
+    font: inherit;
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+  .viewport button:hover:not(:disabled) {
+    background: rgba(43, 49, 56, 0.96);
+    border-color: #f2f5e9;
+  }
+  .viewport :global(button:focus-visible),
+  .viewport :global(input:focus-visible),
+  .stage :global(canvas:focus-visible) {
+    outline: 2px solid #c9f1b5;
+    outline-offset: 3px;
+  }
+  .stage :global(canvas:focus-visible) {
+    outline-offset: -3px;
+  }
+  .viewport button:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+  .scene-toolbar, .scene-footer {
+    position: absolute;
+    left: 0.75rem;
+    right: 0.75rem;
+    z-index: 2;
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    pointer-events: none;
+  }
+  .scene-toolbar {
+    top: 0.75rem;
+    align-items: flex-start;
+  }
+  .scene-heading {
+    min-width: 0;
+    padding: 0.5rem 0.65rem;
+    border-radius: 4px;
+    background: rgba(12, 15, 18, 0.84);
+    line-height: 1.3;
+  }
+  .scene-mode {
+    display: block;
+    color: #c7d3c1;
+    font: 0.62rem/1.4 monospace;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .game-title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    margin-top: 0.2rem;
+    font-size: 0.82rem;
+    overflow-wrap: anywhere;
+  }
+  .scene-tools {
+    display: flex;
+    flex-shrink: 0;
+    align-items: stretch;
+    gap: 0.5rem;
+    pointer-events: auto;
+  }
+  .scene-tools .fullscreen-toggle {
+    font-size: 0.65rem;
+    white-space: nowrap;
+  }
+  .scene-tools .inspect-close {
+    display: grid;
+    place-items: center;
+    width: 2.2rem;
+    min-height: 2.2rem;
+    padding: 0;
+  }
+  .scene-footer {
+    bottom: 0.75rem;
+    align-items: flex-end;
+    flex-wrap: wrap;
+  }
+  .audio-panel {
+    pointer-events: auto;
+    max-width: 100%;
+  }
+  .scene-actions {
+    max-width: min(100%, 21rem);
+    text-align: right;
+  }
+  .scene-actions button {
+    pointer-events: auto;
+  }
+  .inspection-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+  .control-hint, .navigation-error {
+    margin: 0.4rem 0 0;
+    padding: 0.4rem 0.55rem;
+    border-radius: 4px;
+    background: rgba(12, 15, 18, 0.84);
+    font-size: 0.65rem;
+    line-height: 1.5;
+  }
   .navigation-crosshair {
     position: absolute;
     top: 50%;
     left: 50%;
-    transform: translate(-50%, -50%);
     z-index: 2;
-    color: white;
-    font: 24px/1 monospace;
-    text-shadow: 1px 1px 2px black;
+    width: 0;
+    height: 0;
     pointer-events: none;
   }
-  .navigation-prompt, .navigation-hint {
+  .navigation-crosshair img {
+    max-width: none;
+    image-rendering: pixelated;
+  }
+  .target-cross {
+    transform: translate(-50%, -50%);
+  }
+  .target-hand {
+    /* Align the index fingertip, not the palm, with the centre ray. */
+    transform: translate(-12px, -2px);
+  }
+  .target-label {
     position: absolute;
-    bottom: 1rem;
+    top: calc(50% + 3rem);
     left: 50%;
     transform: translateX(-50%);
     z-index: 2;
-    max-width: 65%;
-    color: white;
+    max-width: 70%;
+    padding: 0.4rem 0.6rem;
+    border-radius: 4px;
+    background: rgba(12, 15, 18, 0.88);
     text-align: center;
-    font-size: 0.75rem;
-  }
-  .navigation-hint {
-    padding: 0.4rem 0.7rem;
-    background: rgba(0, 0, 0, 0.75);
     pointer-events: none;
   }
-  .navigation-prompt button {
-    padding: 0.6rem 1rem;
-    border: 1px solid rgba(255, 255, 255, 0.5);
-    border-radius: 6px;
-    background: rgba(0, 0, 0, 0.85);
-    color: white;
-    cursor: pointer;
+  .target-label span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.78rem;
   }
-  .navigation-prompt p {
-    margin: 0.4rem 0 0;
-    padding: 0.4rem;
-    background: rgba(0, 0, 0, 0.85);
+  .target-label small {
+    display: block;
+    margin-top: 0.15rem;
+    font-size: 0.65rem;
+    color: #c9f1b5;
   }
-
+  @container (max-width: 640px) {
+    .viewport {
+      aspect-ratio: 4 / 5;
+      min-height: 26rem;
+    }
+    .scene-footer {
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .scene-actions {
+      order: -1;
+      text-align: center;
+    }
+    .inspection-buttons {
+      justify-content: center;
+    }
+    .inspection-hint {
+      display: none;
+    }
+  }
 </style>

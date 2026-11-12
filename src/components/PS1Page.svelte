@@ -55,9 +55,12 @@
     <b>Controls:</b>
     <ul class="list-disc pl-6">
       <li>Click to navigate, then use WASD to walk and the mouse to look around.</li>
-      <li>Aim the crosshair at a game and left-click to select it.</li>
+      <li>Press C while navigating to toggle crouching; press C again to stand when there is room.</li>
+      <li>Aim at a game: the crosshair becomes a hand when it can be selected. Left-click to inspect.</li>
       <li>Scroll to zoom; right-click to reset zoom.</li>
-      <li>Escape releases the mouse. Use Return to room after selecting a game.</li>
+      <li>Escape releases the mouse while navigating.</li>
+      <li>In Inspect View, Left/Up selects the previous game; Right/Down selects the next.</li>
+      <li>Press another key or click × to return to the room. Tab focuses the controls.</li>
     </ul>
   </div>
   <footer class="my-4 w-full text-left text-sm text-surface-600 dark:text-surface-200">

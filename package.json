@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:ps1": "node --experimental-strip-types --test tests/ps1-navigation.test.mjs"
+    "test:ps1": "node --experimental-strip-types --test tests/ps1-navigation.test.mjs tests/ps1-inspection.test.mjs tests/ps1-picking.test.mjs"
   },
   "devDependencies": {
     "@skeletonlabs/skeleton": "^3.2.0",
