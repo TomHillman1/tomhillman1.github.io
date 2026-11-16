@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { getRenderSize, Ps1Quality, initialQuality, detectInitialQuality } from '../src/components/3d/Ps1Quality.ts';
+import { getRenderSize, getRenderPixelRatio, Ps1Quality, initialQuality, detectInitialQuality } from '../src/components/3d/Ps1Quality.ts';
 
 test('hardware hints select Ultra, while software and hidden renderer details select High', () => {
   for (const name of ['ANGLE (NVIDIA GeForce RTX 4060)', 'Apple M2', 'Intel UHD Graphics', 'AMD Radeon', 'Adreno 740']) {
@@ -18,12 +18,24 @@ test('render buffers are bounded, preserve orientation and never exceed the view
   assert.deepEqual(getRenderSize(1080, 1920, 'high'), { width: 360, height: 640 });
   assert.deepEqual(getRenderSize(200, 100, 'high'), { width: 200, height: 100 });
   assert.deepEqual(getRenderSize(0, 0, 'low'), { width: 1, height: 1 });
-  assert.deepEqual(getRenderSize(1920, 1080, 'ultra'), { width: 1280, height: 720 });
-  assert.deepEqual(getRenderSize(1080, 1920, 'ultra'), { width: 720, height: 1280 });
+  assert.deepEqual(getRenderSize(1920, 1080, 'ultra'), { width: 1920, height: 1080 });
+  assert.deepEqual(getRenderSize(1080, 1920, 'ultra'), { width: 1080, height: 1920 });
   assert.deepEqual(getRenderSize(800, 450, 'ultra'), { width: 800, height: 450 });
+  assert.deepEqual(getRenderSize(1920, 1080, 'very-high'), { width: 1280, height: 720 });
+  assert.deepEqual(getRenderSize(1080, 1920, 'very-high'), { width: 720, height: 1280 });
+  assert.deepEqual(getRenderSize(800, 450, 'very-high'), { width: 800, height: 450 });
   const low = getRenderSize(1920, 1080, 'low');
   assert.ok(low.width <= 426 && low.height <= 240);
   assert.ok(Math.abs(low.width / low.height - 16 / 9) < 0.01);
+});
+
+test('Ultra restores device resolution up to 2x while reduced tiers stay at 1x', () => {
+  assert.equal(getRenderPixelRatio('ultra', 1), 1);
+  assert.equal(getRenderPixelRatio('ultra', 1.5), 1.5);
+  assert.equal(getRenderPixelRatio('ultra', 3), 2);
+  assert.equal(getRenderPixelRatio('high', 2), 1);
+  assert.equal(getRenderPixelRatio('very-high', 2), 1);
+  assert.equal(getRenderPixelRatio('low', 2), 1);
 });
 
 const sample = (quality, count, ms, ready = true) => {
@@ -32,9 +44,11 @@ const sample = (quality, count, ms, ready = true) => {
   return changes;
 };
 
-test('hardware Auto steps from Ultra to High to Low and manual selection stays fixed', () => {
+test('hardware Auto steps through Very High to High to Low and manual selection stays fixed', () => {
   const quality = new Ps1Quality('ultra');
   assert.equal(quality.level, 'ultra');
+  assert.equal(sample(quality, 100, 50), 1);
+  assert.equal(quality.level, 'very-high');
   assert.equal(sample(quality, 100, 50), 1);
   assert.equal(quality.level, 'high');
   assert.equal(sample(quality, 100, 50), 1);
@@ -77,6 +91,9 @@ test('manual modes override adaptation and Auto permits a fresh quality trial', 
   sample(quality, 300, 50);
   assert.equal(quality.low, false);
   assert.equal(quality.mode, 'ultra');
+  quality.setMode('very-high');
+  sample(quality, 300, 50);
+  assert.equal(quality.level, 'very-high');
   quality.setMode('auto');
   assert.equal(quality.low, false);
   assert.equal(sample(quality, 100, 50), 1);

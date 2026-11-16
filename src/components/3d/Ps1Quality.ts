@@ -1,11 +1,16 @@
-export type Ps1QualityMode = 'auto' | 'ultra' | 'high' | 'low';
+export type Ps1QualityMode = 'auto' | 'ultra' | 'very-high' | 'high' | 'low';
 
-/** Bound the long and short edges, including portrait viewports. Never upscale internally. */
+/** Ultra uses the full viewport; other tiers bound both edges, including portrait. */
 export function getRenderSize(width: number, height: number, quality: Exclude<Ps1QualityMode, 'auto'>) {
-  const longEdge = quality === 'ultra' ? 1280 : quality === 'low' ? 426 : 640;
-  const shortEdge = quality === 'ultra' ? 720 : quality === 'low' ? 240 : 360;
+  if (quality === 'ultra') return { width: Math.max(1, Math.round(width)), height: Math.max(1, Math.round(height)) };
+  const longEdge = quality === 'very-high' ? 1280 : quality === 'low' ? 426 : 640;
+  const shortEdge = quality === 'very-high' ? 720 : quality === 'low' ? 240 : 360;
   const scale = Math.min(1, longEdge / Math.max(width, height, 1), shortEdge / Math.max(Math.min(width, height), 1));
   return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
+}
+
+export function getRenderPixelRatio(quality: Exclude<Ps1QualityMode, 'auto'>, devicePixelRatio: number) {
+  return quality === 'ultra' ? Math.min(devicePixelRatio || 1, 2) : 1;
 }
 
 /** Renderer strings are hints, not a reliable browser acceleration setting. */
@@ -27,7 +32,7 @@ export function detectInitialQuality(gl: WebGLRenderingContext | WebGL2Rendering
 export class Ps1Quality {
   mode: Ps1QualityMode = 'auto';
   private initial: 'ultra' | 'high';
-  private automatic: 'ultra' | 'high' | 'low';
+  private automatic: Exclude<Ps1QualityMode, 'auto'>;
   private warmup = 3000;
   private elapsed = 0;
   private frames = 0;
@@ -72,7 +77,7 @@ export class Ps1Quality {
     this.elapsed = 0;
     this.frames = 0;
     if (slow) {
-      this.automatic = this.automatic === 'ultra' ? 'high' : 'low';
+      this.automatic = this.automatic === 'ultra' ? 'very-high' : this.automatic === 'very-high' ? 'high' : 'low';
       this.resetSamples();
     }
     return slow;

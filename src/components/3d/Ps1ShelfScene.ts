@@ -8,7 +8,7 @@ import { Ps1PostProcessing } from './Ps1PostProcessing';
 import { Ps1Navigation } from './Ps1Navigation';
 import { getInspectionFrame } from './Ps1Inspection';
 import { pickVisibleGame } from './Ps1Picking';
-import { Ps1Quality, getRenderSize, detectInitialQuality, type Ps1QualityMode } from './Ps1Quality';
+import { Ps1Quality, getRenderSize, getRenderPixelRatio, detectInitialQuality, type Ps1QualityMode } from './Ps1Quality';
 import bookshelfUrl from '../../assets/bookshelf.glb?url';
 import gameBoyColorUrl from '../../assets/game_boy_color.glb?url';
 import nokiaUrl from '../../assets/nokia_6230.glb?url';
@@ -211,9 +211,11 @@ export class Ps1ShelfScene {
     this.renderer = new THREE.WebGLRenderer({ antialias: false });
     this.quality = new Ps1Quality(detectInitialQuality(this.renderer.getContext()));
     const renderSize = getRenderSize(clientWidth, clientHeight, this.quality.level);
-    this.renderer.setPixelRatio(1);
+    this.renderer.setPixelRatio(getRenderPixelRatio(this.quality.level, window.devicePixelRatio));
     this.renderer.setSize(renderSize.width, renderSize.height, false);
-    Object.assign(this.renderer.domElement.style, { width: '100%', height: '100%', imageRendering: 'pixelated' });
+    Object.assign(this.renderer.domElement.style, {
+      width: '100%', height: '100%', imageRendering: this.quality.level === 'ultra' ? 'auto' : 'pixelated'
+    });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -1881,8 +1883,11 @@ export class Ps1ShelfScene {
     this.updateCameraProjection();
     if (this.cameraMode === 'inspect') this.updateInspectionFrame();
     const size = getRenderSize(clientWidth, clientHeight, this.quality.level);
+    const pixelRatio = getRenderPixelRatio(this.quality.level, window.devicePixelRatio);
+    this.renderer.setPixelRatio(pixelRatio);
     this.renderer.setSize(size.width, size.height, false);
-    this.postProcessing.setSize(size.width, size.height, 1);
+    this.renderer.domElement.style.imageRendering = this.quality.level === 'ultra' ? 'auto' : 'pixelated';
+    this.postProcessing.setSize(size.width, size.height, pixelRatio);
     this.quality.resetSamples();
   }
 

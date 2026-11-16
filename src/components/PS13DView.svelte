@@ -288,13 +288,14 @@
 <section class="ps1-3d">
   <label class="quality-control">
     Graphics
-    <select bind:value={qualityMode} on:change={() => scene?.setQuality(qualityMode)}>
+    <select bind:value={qualityMode} on:change={() => scene?.setQuality(qualityMode)} title={qualityMode === 'ultra' || qualityMode === 'very-high' ? 'Hardware acceleration recommended' : undefined}>
       <option value="auto">Auto</option>
-      <option value="ultra">Ultra (1280×720)</option>
+      <option value="ultra" title="Hardware acceleration recommended">Ultra (native resolution)</option>
+      <option value="very-high" title="Hardware acceleration recommended">Very High (720p)</option>
       <option value="high">High</option>
       <option value="low">Low (30 FPS)</option>
     </select>
-    <span role="status">{qualityMode === 'auto' ? `Using ${activeQuality} quality` : ''}</span>
+    <span role="status">{qualityMode === 'auto' ? `Using ${activeQuality.replace('-', ' ')} quality` : ''}</span>
   </label>
   <div class="viewport" class:inspect-mode={Boolean(selectedGame)} bind:this={viewportEl}>
     <PS1LoadingOverlay
