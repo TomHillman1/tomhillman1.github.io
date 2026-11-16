@@ -1,9 +1,9 @@
-export type Ps1QualityMode = 'auto' | 'high' | 'low';
+export type Ps1QualityMode = 'auto' | 'ultra' | 'high' | 'low';
 
 /** Bound the long and short edges, including portrait viewports. Never upscale internally. */
-export function getRenderSize(width: number, height: number, low: boolean) {
-  const longEdge = low ? 426 : 640;
-  const shortEdge = low ? 240 : 360;
+export function getRenderSize(width: number, height: number, quality: Exclude<Ps1QualityMode, 'auto'>) {
+  const longEdge = quality === 'ultra' ? 1280 : quality === 'low' ? 426 : 640;
+  const shortEdge = quality === 'ultra' ? 720 : quality === 'low' ? 240 : 360;
   const scale = Math.min(1, longEdge / Math.max(width, height, 1), shortEdge / Math.max(Math.min(width, height), 1));
   return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
 }

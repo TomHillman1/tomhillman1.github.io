@@ -283,6 +283,7 @@
     Graphics
     <select bind:value={qualityMode} on:change={() => scene?.setQuality(qualityMode)}>
       <option value="auto">Auto</option>
+      <option value="ultra">Ultra (1280×720)</option>
       <option value="high">High</option>
       <option value="low">Low (30 FPS)</option>
     </select>

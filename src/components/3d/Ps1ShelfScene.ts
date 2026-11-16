@@ -204,7 +204,7 @@ export class Ps1ShelfScene {
 
     // WebGL renderer bound to the provided DOM container.
     this.renderer = new THREE.WebGLRenderer({ antialias: false });
-    const renderSize = getRenderSize(clientWidth, clientHeight, false);
+    const renderSize = getRenderSize(clientWidth, clientHeight, 'high');
     this.renderer.setPixelRatio(1);
     this.renderer.setSize(renderSize.width, renderSize.height, false);
     Object.assign(this.renderer.domElement.style, { width: '100%', height: '100%', imageRendering: 'pixelated' });
@@ -1784,7 +1784,8 @@ export class Ps1ShelfScene {
     this.camera.aspect = clientWidth / clientHeight;
     this.camera.updateProjectionMatrix();
     if (this.cameraMode === 'inspect') this.updateInspectionFrame();
-    const size = getRenderSize(clientWidth, clientHeight, this.quality.low);
+    const size = getRenderSize(clientWidth, clientHeight,
+      this.quality.low ? 'low' : this.quality.mode === 'ultra' ? 'ultra' : 'high');
     this.renderer.setSize(size.width, size.height, false);
     this.postProcessing.setSize(size.width, size.height, 1);
     this.quality.resetSamples();
