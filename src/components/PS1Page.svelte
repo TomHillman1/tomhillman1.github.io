@@ -57,9 +57,10 @@
       <li>Click to navigate, then use WASD to walk and the mouse to look around.</li>
       <li>Press C while navigating to toggle crouching; press C again to stand when there is room.</li>
       <li>Aim at a game: the crosshair becomes a hand when it can be selected. Left-click to inspect.</li>
-      <li>Scroll to zoom; right-click to reset zoom.</li>
+      <li>Scroll to zoom; in Inspect View, zoom follows the cursor. Right-click resets zoom and centering.</li>
       <li>Escape releases the mouse while navigating.</li>
       <li>In Inspect View, Left/Up selects the previous game; Right/Down selects the next.</li>
+      <li>Click the inspected game to stop its spin, then drag to rotate it. Selecting another game starts its automatic spin.</li>
       <li>Press another key or click × to return to the room. Tab focuses the controls.</li>
     </ul>
   </div>

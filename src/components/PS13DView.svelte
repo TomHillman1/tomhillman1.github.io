@@ -11,6 +11,7 @@
     PS1_LOADING_PROGRESS_EVENT,
     PS1_NAVIGATION_CHANGE_EVENT,
     PS1_HOVER_CHANGE_EVENT,
+    PS1_SPIN_CHANGE_EVENT,
     PS1_SELECTION_CHANGE_EVENT,
     Ps1ShelfScene,
     type ShelfGamePressDetail,
@@ -29,11 +30,12 @@
   let scene: Ps1ShelfScene | null = null;
   let selectedGame: ShelfGame | null = null;
   let hoveredGame: ShelfGame | null = null;
+  let spinning = true;
   let navigationLocked = false;
   let returningToRoom = false;
   let navigationError = '';
   let qualityMode: Ps1QualityMode = 'auto';
-  let lowQuality = false;
+  let activeQuality: Exclude<Ps1QualityMode, 'auto'> = 'high';
   let loadingActive = true;
   let loadingProgress = 0;
   let loadingLoaded = 0;
@@ -229,8 +231,12 @@
     const onHoverChange = (event: Event) => {
       hoveredGame = (event as CustomEvent<ShelfHoverChangeDetail>).detail.game;
     };
+    const onSpinChange = (event: Event) => {
+      spinning = (event as CustomEvent<{ spinning: boolean }>).detail.spinning;
+    };
+    container.addEventListener(PS1_SPIN_CHANGE_EVENT, onSpinChange);
     const onQualityChange = (event: Event) => {
-      lowQuality = (event as CustomEvent<{ low: boolean }>).detail.low;
+      activeQuality = (event as CustomEvent<{ level: Exclude<Ps1QualityMode, 'auto'> }>).detail.level;
     };
     container.addEventListener('ps1-quality-change', onQualityChange);
 
@@ -249,6 +255,7 @@
       container?.removeEventListener(PS1_LOADING_PROGRESS_EVENT, onLoadingProgress);
       container?.removeEventListener(PS1_NAVIGATION_CHANGE_EVENT, onNavigationChange);
       container?.removeEventListener(PS1_HOVER_CHANGE_EVENT, onHoverChange);
+      container?.removeEventListener(PS1_SPIN_CHANGE_EVENT, onSpinChange);
       container?.removeEventListener('ps1-quality-change', onQualityChange);
       document.removeEventListener('fullscreenchange', syncFullscreenState);
       clearSelectedMusic();
@@ -287,7 +294,7 @@
       <option value="high">High</option>
       <option value="low">Low (30 FPS)</option>
     </select>
-    <span role="status">{qualityMode === 'auto' ? `Using ${lowQuality ? 'low' : 'high'} quality` : ''}</span>
+    <span role="status">{qualityMode === 'auto' ? `Using ${activeQuality} quality` : ''}</span>
   </label>
   <div class="viewport" class:inspect-mode={Boolean(selectedGame)} bind:this={viewportEl}>
     <PS1LoadingOverlay
@@ -355,8 +362,13 @@
             <div class="inspection-buttons">
               <button type="button" disabled={games.length < 2} on:click={() => scene?.cycleSelection(-1)} aria-label="Inspect previous game">&larr; Previous</button>
               <button type="button" disabled={games.length < 2} on:click={() => scene?.cycleSelection(1)} aria-label="Inspect next game">Next &rarr;</button>
+              <button class="spin-toggle" type="button" aria-pressed={spinning} title={spinning ? 'Stop spinning' : 'Start spinning'} on:click={() => scene?.toggleInspectionSpin()}>
+                <!-- Google Material Symbols Outlined: 360 (Apache-2.0). -->
+                <svg aria-hidden="true" width="24" height="24" viewBox="0 -960 960 960" fill="currentColor"><path d="m360-160-56-56 70-72q-128-17-211-70T80-480q0-83 115.5-141.5T480-680q169 0 284.5 58.5T880-480q0 62-66.5 111T640-296v-82q77-20 118.5-49.5T800-480q0-32-85.5-76T480-600q-149 0-234.5 44T160-480q0 24 51 57.5T356-372l-52-52 56-56 160 160-160 160Z" /></svg>
+                Spin
+              </button>
             </div>
-            <p class="control-hint inspection-hint">Arrows change game; other keys exit.<br />Tab focuses controls.</p>
+            <p class="control-hint inspection-hint">Click the case to stop spinning; drag to rotate.<br />Arrows change game; other keys exit. Tab focuses controls.</p>
           {:else}
             <button class="navigation-start" type="button" disabled={returningToRoom} on:click={() => scene?.startNavigation()}>
               {returningToRoom ? 'Returning to room...' : 'Click to navigate'}
@@ -432,6 +444,9 @@
   }
   .viewport.inspect-mode {
     cursor: var(--ps1-pointer);
+  }
+  .viewport.inspect-mode .stage :global(canvas) {
+    touch-action: none;
   }
   .viewport.inspect-mode :global(button:not(:disabled)),
   .viewport.inspect-mode :global(input[type='range']),
@@ -538,8 +553,18 @@
   }
   .inspection-buttons {
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
     gap: 0.5rem;
+  }
+  .spin-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  .spin-toggle[aria-pressed='true'] {
+    background: #324b39;
+    border-color: #b8d5b6;
   }
   .control-hint, .navigation-error {
     margin: 0.4rem 0 0;

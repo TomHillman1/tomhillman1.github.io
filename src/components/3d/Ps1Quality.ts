@@ -8,17 +8,44 @@ export function getRenderSize(width: number, height: number, quality: Exclude<Ps
   return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
 }
 
-/** Auto downgrades once per selection; explicit Auto retries high quality. */
+/** Renderer strings are hints, not a reliable browser acceleration setting. */
+export function initialQuality(renderer: unknown): 'ultra' | 'high' {
+  if (typeof renderer !== 'string' || /swiftshader|llvmpipe|softpipe|software|basic render|\bwarp\b|lavapipe/i.test(renderer)) return 'high';
+  return /nvidia|geforce|quadro|radeon|\bamd\b|intel|apple|adreno|mali|powervr|vivante/i.test(renderer) ? 'ultra' : 'high';
+}
+
+export function detectInitialQuality(gl: WebGLRenderingContext | WebGL2RenderingContext): 'ultra' | 'high' {
+  try {
+    const info = gl.getExtension('WEBGL_debug_renderer_info');
+    return info ? initialQuality(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : 'high';
+  } catch {
+    return 'high';
+  }
+}
+
+/** Auto steps down after sustained slow frames; reselecting Auto retries its initial tier. */
 export class Ps1Quality {
   mode: Ps1QualityMode = 'auto';
-  low = false;
+  private initial: 'ultra' | 'high';
+  private automatic: 'ultra' | 'high' | 'low';
   private warmup = 3000;
   private elapsed = 0;
   private frames = 0;
 
+  constructor(initial: 'ultra' | 'high' = 'high') {
+    this.initial = initial;
+    this.automatic = initial;
+  }
+
+  get level(): Exclude<Ps1QualityMode, 'auto'> {
+    return this.mode === 'auto' ? this.automatic : this.mode;
+  }
+
+  get low() { return this.level === 'low'; }
+
   setMode(mode: Ps1QualityMode) {
     this.mode = mode;
-    this.low = mode === 'low';
+    this.automatic = this.initial;
     this.resetSamples();
   }
 
@@ -44,7 +71,10 @@ export class Ps1Quality {
     const slow = this.elapsed / this.frames > 1000 / 40;
     this.elapsed = 0;
     this.frames = 0;
-    if (slow) this.low = true;
+    if (slow) {
+      this.automatic = this.automatic === 'ultra' ? 'high' : 'low';
+      this.resetSamples();
+    }
     return slow;
   }
 }

@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { getRenderSize, Ps1Quality } from '../src/components/3d/Ps1Quality.ts';
+import { getRenderSize, Ps1Quality, initialQuality, detectInitialQuality } from '../src/components/3d/Ps1Quality.ts';
+
+test('hardware hints select Ultra, while software and hidden renderer details select High', () => {
+  for (const name of ['ANGLE (NVIDIA GeForce RTX 4060)', 'Apple M2', 'Intel UHD Graphics', 'AMD Radeon', 'Adreno 740']) {
+    assert.equal(initialQuality(name), 'ultra');
+  }
+  for (const name of ['SwiftShader', 'ANGLE (Microsoft Basic Render Driver)', 'llvmpipe', 'Apple Software Renderer', 'WebKit WebGL', '', null]) {
+    assert.equal(initialQuality(name), 'high');
+  }
+  assert.equal(detectInitialQuality({ getExtension: () => null }), 'high');
+  assert.equal(detectInitialQuality({ getExtension: () => { throw new Error('Unavailable'); } }), 'high');
+});
 
 test('render buffers are bounded, preserve orientation and never exceed the viewport', () => {
   assert.deepEqual(getRenderSize(1920, 1080, 'high'), { width: 640, height: 360 });
@@ -20,6 +31,20 @@ const sample = (quality, count, ms, ready = true) => {
   for (let i = 0; i < count; i++) changes += Number(quality.sample(ms, ready));
   return changes;
 };
+
+test('hardware Auto steps from Ultra to High to Low and manual selection stays fixed', () => {
+  const quality = new Ps1Quality('ultra');
+  assert.equal(quality.level, 'ultra');
+  assert.equal(sample(quality, 100, 50), 1);
+  assert.equal(quality.level, 'high');
+  assert.equal(sample(quality, 100, 50), 1);
+  assert.equal(quality.level, 'low');
+  quality.setMode('auto');
+  assert.equal(quality.level, 'ultra');
+  quality.setMode('high');
+  sample(quality, 200, 50);
+  assert.equal(quality.level, 'high');
+});
 
 test('auto ignores loading and warmup then downgrades sustained slow rendering only once', () => {
   const quality = new Ps1Quality();
