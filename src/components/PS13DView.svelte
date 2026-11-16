@@ -5,6 +5,7 @@
   import PS1LoadingOverlay from './PS1LoadingOverlay.svelte';
   import crosshairUrl from '../assets/cursors/ps1-crosshair.svg?url';
   import handCursorUrl from '../assets/cursors/win98-hand.svg?url';
+  import type { Ps1QualityMode } from './3d/Ps1Quality';
   import {
     PS1_GAME_PRESS_EVENT,
     PS1_LOADING_PROGRESS_EVENT,
@@ -31,6 +32,8 @@
   let navigationLocked = false;
   let returningToRoom = false;
   let navigationError = '';
+  let qualityMode: Ps1QualityMode = 'auto';
+  let lowQuality = false;
   let loadingActive = true;
   let loadingProgress = 0;
   let loadingLoaded = 0;
@@ -59,6 +62,7 @@
   function createScene() {
     if (!container || scene) return;
     scene = new Ps1ShelfScene(container, games);
+    scene.setQuality(qualityMode);
   }
 
   function destroyScene() {
@@ -225,6 +229,10 @@
     const onHoverChange = (event: Event) => {
       hoveredGame = (event as CustomEvent<ShelfHoverChangeDetail>).detail.game;
     };
+    const onQualityChange = (event: Event) => {
+      lowQuality = (event as CustomEvent<{ low: boolean }>).detail.low;
+    };
+    container.addEventListener('ps1-quality-change', onQualityChange);
 
     container.addEventListener(PS1_SELECTION_CHANGE_EVENT, onSelectionChange);
     container.addEventListener(PS1_GAME_PRESS_EVENT, onGamePress);
@@ -241,6 +249,7 @@
       container?.removeEventListener(PS1_LOADING_PROGRESS_EVENT, onLoadingProgress);
       container?.removeEventListener(PS1_NAVIGATION_CHANGE_EVENT, onNavigationChange);
       container?.removeEventListener(PS1_HOVER_CHANGE_EVENT, onHoverChange);
+      container?.removeEventListener('ps1-quality-change', onQualityChange);
       document.removeEventListener('fullscreenchange', syncFullscreenState);
       clearSelectedMusic();
       destroyScene();
@@ -270,6 +279,15 @@
 </script>
 
 <section class="ps1-3d">
+  <label class="quality-control">
+    Graphics
+    <select bind:value={qualityMode} on:change={() => scene?.setQuality(qualityMode)}>
+      <option value="auto">Auto</option>
+      <option value="high">High</option>
+      <option value="low">Low (30 FPS)</option>
+    </select>
+    <span role="status">{qualityMode === 'auto' ? `Using ${lowQuality ? 'low' : 'high'} quality` : ''}</span>
+  </label>
   <div class="viewport" class:inspect-mode={Boolean(selectedGame)} bind:this={viewportEl}>
     <PS1LoadingOverlay
       active={overlayActive}
@@ -381,6 +399,21 @@
     overflow: hidden;
     background: #000;
     color: #f6f5ef;
+  }
+  .quality-control {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.8rem;
+  }
+  .quality-control select {
+    background: #121619;
+    color: #f6f5ef;
+    border: 1px solid #7a867a;
+    border-radius: 4px;
+    padding: 0.3rem 1.8rem 0.3rem 0.5rem;
   }
   .viewport:fullscreen {
     width: 100vw;

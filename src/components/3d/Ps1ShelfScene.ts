@@ -8,6 +8,7 @@ import { Ps1PostProcessing } from './Ps1PostProcessing';
 import { Ps1Navigation } from './Ps1Navigation';
 import { getInspectionFrame } from './Ps1Inspection';
 import { pickVisibleGame } from './Ps1Picking';
+import { Ps1Quality, getRenderSize, type Ps1QualityMode } from './Ps1Quality';
 import bookshelfUrl from '../../assets/bookshelf.glb?url';
 import gameBoyColorUrl from '../../assets/game_boy_color.glb?url';
 import nokiaUrl from '../../assets/nokia_6230.glb?url';
@@ -127,6 +128,9 @@ export class Ps1ShelfScene {
   private cameraDesiredTarget = new THREE.Vector3(0, 0.6, 0);
   private frameId: number | null = null;
   private lastFrameTime = performance.now();
+  private quality = new Ps1Quality();
+  private lastRenderTime = 0;
+  private renderBudgetMs = 0;
   private backgroundTexture: THREE.Texture | null = null;
   private caseEnvironment: THREE.WebGLRenderTarget;
   private roomGroup: THREE.Group | null = null;
@@ -200,8 +204,10 @@ export class Ps1ShelfScene {
 
     // WebGL renderer bound to the provided DOM container.
     this.renderer = new THREE.WebGLRenderer({ antialias: false });
-    this.renderer.setSize(clientWidth, clientHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const renderSize = getRenderSize(clientWidth, clientHeight, false);
+    this.renderer.setPixelRatio(1);
+    this.renderer.setSize(renderSize.width, renderSize.height, false);
+    Object.assign(this.renderer.domElement.style, { width: '100%', height: '100%', imageRendering: 'pixelated' });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -1483,14 +1489,29 @@ export class Ps1ShelfScene {
     const animate = () => {
       this.frameId = requestAnimationFrame(animate);
       const now = performance.now();
-      const deltaSeconds = Math.min((now - this.lastFrameTime) / 1000, 0.05);
+      const frameMs = now - this.lastFrameTime;
       this.lastFrameTime = now;
+      if (document.hidden) {
+        this.quality.resetSamples();
+        this.lastRenderTime = now;
+        this.renderBudgetMs = 0;
+        return;
+      }
+      if (this.quality.sample(frameMs, this.trackedPendingLoads === 0 && this.navigationInitialized)) {
+        this.applyQuality();
+      }
+      this.renderBudgetMs += frameMs;
+      if (this.quality.low && this.renderBudgetMs < 1000 / 30 - 0.5) return;
+      this.renderBudgetMs = this.quality.low ? Math.max(0, this.renderBudgetMs - 1000 / 30) % (1000 / 30) : 0;
+      const deltaSeconds = Math.min((now - (this.lastRenderTime || now)) / 1000, 0.05);
+      this.lastRenderTime = now;
       this.updateCameraMovement(deltaSeconds);
       this.updateViewAnimation();
       this.updateSelectionAnimation(deltaSeconds);
       this.updateCameraFocus(deltaSeconds);
       this.updateHover(deltaSeconds);
-      this.postProcessing.render(deltaSeconds, now / 1000);
+      if (this.quality.low) this.renderer.render(this.scene, this.camera);
+      else this.postProcessing.render(deltaSeconds, now / 1000);
     };
     animate();
   }
@@ -1763,8 +1784,25 @@ export class Ps1ShelfScene {
     this.camera.aspect = clientWidth / clientHeight;
     this.camera.updateProjectionMatrix();
     if (this.cameraMode === 'inspect') this.updateInspectionFrame();
-    this.renderer.setSize(clientWidth, clientHeight);
-    this.postProcessing.setSize(clientWidth, clientHeight, this.renderer.getPixelRatio());
+    const size = getRenderSize(clientWidth, clientHeight, this.quality.low);
+    this.renderer.setSize(size.width, size.height, false);
+    this.postProcessing.setSize(size.width, size.height, 1);
+    this.quality.resetSamples();
+  }
+
+  setQuality(mode: Ps1QualityMode) {
+    this.quality.setMode(mode);
+    this.applyQuality();
+  }
+
+  private applyQuality() {
+    this.renderer.shadowMap.enabled = !this.quality.low;
+    this.renderer.shadowMap.needsUpdate = true;
+    this.renderBudgetMs = 0;
+    this.onResize();
+    this.container.dispatchEvent(new CustomEvent('ps1-quality-change', {
+      detail: { low: this.quality.low }
+    }));
   }
 
   destroy() {
